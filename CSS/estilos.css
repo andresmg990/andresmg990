@@ -66,8 +66,8 @@ table{
 }
 
 #logoizquierdo {
-	width: 15%;
-	height: 15%;
+	width: 10%;
+	height: 10%;
 	float: left;
 	padding-top: 10px;
 	padding-left: 20px;
@@ -78,8 +78,8 @@ table{
 }
 
 #logoderecho {
-	width: 80%;
-	height: 10%;
+	width: 70%;
+	height: 8%;
 	float: left;
 	border-radius: 35px 35px 35px 35px;
 	-moz-border-radius:  35px 35px 35px 35px;
