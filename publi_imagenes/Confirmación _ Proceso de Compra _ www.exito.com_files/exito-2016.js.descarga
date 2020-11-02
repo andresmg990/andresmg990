@@ -1,0 +1,2477 @@
+/**
+ * Zopim Chat
+*/
+var zopimUserName = null;
+var zopimEmail = null;
+
+/**
+ * Description: llamada ajax a AjaxAction para consultar la información del usuario
+ *              y de cobertura.
+ * Parameters : parameters = json con los datos de consulta
+ * Created    : 2017/02/02 - Modified:
+*/
+function callCoverageAjax( parameters ){
+	try{
+		return $.ajax( {
+			url      : '/site/AjaxAction',
+			type     : 'post',
+			data     : parameters,
+			dataType : 'json'
+		} )
+		.done( function( data ) {
+			if( data !== null ){
+				if( data.error ){
+					throw 'AJAX ACTION - COVERAGE FAIL: data.error = true';
+				}
+			} else {
+				throw 'AJAX ACTION - COVERAGE FAIL: Value data null';
+			}
+		} )
+		.fail( function( jqXHR, textStatus, errorThrown ){
+			console.log( 'AJAX ACTION - COVERAGE FAIL: ' + textStatus );
+		} );
+	} catch (e) {
+		console.log( 'AJAX ACTION - COVERAGE ERROR: ' + e.message );
+	}
+};
+
+var coverage = callCoverageAjax( {} );
+
+/**
+ * Description: Procesa la respuesta del llamado ajax de la función callCoverageAjax 
+ *              y almacena las variables para el data layer y el chat zopim.
+ * Created    : 2017/02/02 - Modified:
+*/
+coverage.then( function( data ){
+	try{
+		enhancedEcommerceUser( data );
+		if( data.name != '' ){
+			zopimUserName = data.name;
+			zopimEmail = data.emailHash;
+		}
+	} catch( e ){
+		console.log( 'Coverage - error in showHeaderUserInfo' );
+	}
+	return false;
+} );
+
+
+/**
+* Description: Eventos asociados a la pantalla de direcciones y la ventana modal
+* Created    : 2016/03/04 - Modified: 2016/05/17
+*/
+if( $('#standard-shipping').length ){
+	
+	/* +++++++++++++ */
+	/* +  ADDRESS  + */
+	/* +++++++++++++ */
+	
+	function Address ( task, addresskey, addressname, dependency, name, lastname, address, department, departmentid, city, cityid, telephone, regionname ){
+		this.task         = task;
+		this.addressKey   = addresskey;
+		this.addressName  = addressname;
+		this.dependency   = dependency;
+		this.name         = name;
+		this.lastName     = lastname;
+		this.address      = address;
+		this.department   = department;
+		this.departmentId = departmentid;
+		this.city         = city;
+		this.cityId       = cityid;
+		this.telephone    = telephone;
+		this.regionName   = regionname;
+	}
+
+	/**
+	* Description: Compara la información de dos direcciones  
+	* Parameters : oldAddress = Objeto Address con la información de la direccion vieja,
+	*              newAddress = Objeto Address con la información de la direccion nueva
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var comparedAddress = function( oldAddress, newAddress ){
+		if( oldAddress.name !== newAddress.name ){
+			return true;
+		}
+		if( oldAddress.lastName !== newAddress.lastName ){
+			return true;
+		}
+		if( oldAddress.address !== newAddress.address ){
+			return true;
+		}
+		if( oldAddress.department !== newAddress.department ){
+			return true;
+		}
+		if( oldAddress.departmentKey !== newAddress.departmentKey ){
+			return true;
+		}
+		if( oldAddress.city !== newAddress.city ){
+			return true;
+		}
+		if( oldAddress.cityKey !== newAddress.cityKey ){
+			return true;
+		}
+		if( oldAddress.telephone !== newAddress.telephone ){
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	* Description: Configuración del plugin de validación para el formulario que se utiliza
+	*              para crear o editar direcciones  
+	* Parameters : $form = formulario de la ventana modal
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var validateAddresModalForm = function( $form ){
+		$form.formValidation( {
+			autoFocus: true,
+			framework: 'bootstrap',
+			locale: 'es_ES',
+			fields: {
+				name: {
+					validators: { notEmpty: { message: 'Por favor ingrese el nombre.' }, stringLength: { min: 3, max: 40 }, regexp: { regexp: /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]+$/ } }
+				},
+				lastName: {
+					validators: { notEmpty: { message: 'Por favor ingrese el apellido.' }, stringLength: { min: 3, max: 40 }, regexp: { regexp: /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]+$/ } }
+				},
+				address: {
+					validators: { notEmpty: { message: 'Por favor ingrese una dirección' }, stringLength: { min: 3, max: 80 }, regexp: { regexp: /^[a-zA-ZñÑ0-9\s\-\.#]+$/ } }
+				},
+				country: {
+					validators: { notEmpty: {} }
+				},
+				department: {
+					validators: { notEmpty: { message: 'por favor seleccione un departamento.' } }
+				},
+				city: {
+					validators: { notEmpty: { message: 'por favor seleccione una ciudad.' } }
+				},
+				telephone: {
+					validators: { notEmpty: { message: 'Por favor ingrese un número de teléfono o celular' }, numeric: {}, stringLength: { min: 7, max: 10 }, }
+				}
+			}
+		} );
+		$form.data('formValidation').validate();
+		return $form.data('formValidation').isValid();
+	}
+
+	var updateAddress = function( address, hasGrocery, message, addressKeyOld, addressKeyNew ){
+		if( !hasGrocery ){
+			updatePanelAddress( address );
+		} else if ( hasGrocery && address.dependency !== '' ){
+			if( addressKeyOld !== '' && addressKeyNew !== '' ){
+				$('.my-address[data-addresskey="' + addressKeyOld + '"]').first().attr('data-addresskey', addressKeyNew );
+				address.addressKey = addressKeyNew;
+			}
+			
+			if( address.dependency > 0 ){
+				updatePanelAddress( address );
+			} else if ( address.dependency === '-1' || address.dependency === '-2' ){
+				var $myAddress     = $('.my-address[data-addresskey="' + address.addressKey + '"]').first();
+				if( $myAddress.hasClass('panel-warning') ){
+					$myAddress.remove();
+					createTmpNotHasAddress( 'La dirección editada no tiene cobertura', message );
+					addAddressToList( address );
+				} else {
+					updatePanelAddress( address );
+				}
+			}
+		}
+	}
+	
+
+	/**
+	* Description: Actualiza la información de una dirección en pantalla
+	* Parameters : address = objeto Address
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var updatePanelAddress = function( address ){
+		var $myAddress     = $('.my-address[data-addresskey="' + address.addressKey + '"]').first();
+		var $myAddressData = $myAddress.find('.panel-body .my-addres-data');
+		$myAddressData.filter('.name').text( address.name.trim() );
+		$myAddressData.filter('.lastName').text( address.lastName.trim() );
+		$myAddressData.filter('.address').text( address.address.trim() );
+		$myAddressData.filter('.department').text( address.department.trim() );
+		$myAddressData.filter('.department').data('value', address.departmentId.trim() );
+		$myAddressData.filter('.city').text( address.city.trim() );
+		$myAddressData.filter('.city').data('value', address.cityId.trim() );
+		$myAddressData.filter('.telephone').text( address.telephone.trim() );
+		if( address.dependency < 0 ){
+			var $myAddressBody = $myAddress.find('.panel-body'),
+				$myAddressText = $myAddressBody.children( '.text-danger' ),
+				$myAddressLink = $myAddressBody.children( '.my-address-setup' );
+
+			$myAddress.attr('data-dependency', '');
+			switch( address.dependency ) {
+				case '-1':
+					if( $myAddressText.length ){
+						$myAddressText.remove();
+						$('<a>', { href : '#', class : 'mobil-link my-address-setup' } ).text('Establecer como dirección de envío').appendTo( $myAddressBody );
+					}
+					break;
+				case '-2':
+					if( $myAddressLink.length ){
+						$myAddressLink.remove();
+						$('<p>', { class : 'text-danger' }).html('<span class="icoe-alerta"></span> Dirección sin cobertura para ' + address.regionName ).appendTo( $myAddressBody );
+					}
+					break;
+			}
+		} else {
+			$myAddress.attr( { 'data-addresskey' : address.addressKey, 'data-addressname' : address.addressName, 'data-dependency' : address.dependency } );
+		}
+		if( address.task !== '' ){
+			showMessagesAlert( 'Su dirección se actualizó correctamente', 'alert-success', $myAddress.parent(), 'prepend', 3500, true );
+		}
+		return false;
+	}
+	
+
+	/**
+	* Description: Adiciona un panel con la información de una dirección nueva
+	*              validando la cobertura.
+	* Parameters : address = objeto Address
+	* Created    : 2016/06/29 - Modified:
+	*/
+	var addAddress = function( address, hasGrocery, message ){
+		var $notHasAddress = $( '#not-has-address' ),
+			$address       = $( '#registered-addresses-delivery' );
+			$bodyAddress   = $address.find( '#body-registered-addresses-delivery' );
+			
+		if( !hasGrocery ){ //if( !hasGrocery && address.dependency === '' ){
+			if( !$notHasAddress.length && $bodyAddress.find( '.my-address' ).length >= 0 ) {
+				addAddressToList( address );
+			} else {
+				addSelectedShippingAddress( $notHasAddress, address );
+			}
+		} else if ( hasGrocery && address.dependency !== '' ){
+			if( address.dependency > 0 ){
+				if( !$notHasAddress.length && $bodyAddress.find( '.my-address' ).length >= 0 ) {
+					addAddressToList( address );
+				} else {
+					addSelectedShippingAddress( $notHasAddress, address );
+				}
+			} else if ( address.dependency === '-1' || address.dependency === '-2' ){
+				if( $notHasAddress.length ) {
+					var $alert = $notHasAddress.find( '.alert' );
+					if( $alert.hasClass('alert-warning') ){
+						$alert.removeClass('alert-warning').addClass('alert-danger');
+					}
+					$alert.html( '<strong>La dirección creada no tiene cobertura</strong></br>' + message );
+				}
+				addAddressToList( address );
+			} 
+		}
+	}
+	
+
+	/**
+	* Description: Adiciona una dirección a la lista de direcciones en pantalla
+	* Parameters : address = objeto Address
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var addAddressToList = function( address ){
+		var $address       = $( '#registered-addresses-delivery' ),
+			$bodyAddress   = $( '#body-registered-addresses-delivery' ),
+			$panelAddress = $bodyAddress.find( '.panel-body' ).first(),
+			$cell         = $('<div>', { 'class' : 'col-md-6'} );
+		
+		if( $panelAddress.children('.row').length === 0 ){
+			createTmplPanelAddress( $cell, address );
+			$('<div>', { 'class' : 'row' } ).append( $cell ).appendTo( $panelAddress );
+		} else {
+			if( ( $panelAddress.children( '.row' ).children( '.col-md-6' ).length % 2 ) === 0 ){
+				createTmplPanelAddress( $cell, address );
+				$panelAddress.children( '.row' ).append( $('<hr>', { 'class' : 'hidden-xs' } ) ).append( $cell );
+			} else {
+				createTmplPanelAddress( $cell, address );
+				$panelAddress.children( '.row' ).append( $cell );
+			}
+		}
+		if( $address.hasClass( 'hidden' ) ){
+			$address.removeClass('hidden');
+		}
+		if( !$bodyAddress.hasClass('in') ){
+			$bodyAddress.addClass('in').attr( 'aria-expanded', 'true');
+		}
+		if( address.task !== '' ){
+			showMessagesAlert( 'Su dirección se creó correctamente', 'alert-success', $cell, 'prepend', 3500, true );
+		}
+		return false;
+	}
+
+	/**
+	* Description: Crea el panel de la dirección seleccionada para el envio de productos
+	* Parameters : $notHasAddress = Panel de advertencia que indica en pantalla que no
+	*              el usuario no tiene una dirección seleccionada para el envio
+	*              address = objeto Address
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var addSelectedShippingAddress = function( $notHasAddress, address ){
+		$notHasAddress = $('#not-has-address').hide();
+		createTmplPanelSelectedAddress( $notHasAddress, address );
+		$notHasAddress.remove();
+		$('.btn-shipping').prop( { disabled: false } );
+		return false;
+	}
+	
+
+	/**
+	* Description: Crea el panel para una dirección que se va a agregar en la lista de direcciones
+	* Parameters : $cell = objeto html que contiene las dirección
+	*              address = objeto Address
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var createTmplPanelAddress = function( $cell, address ){
+		$.template('createPanelAddress', tmpPanelAddres);
+		$.tmpl( 'createPanelAddress', address ).appendTo( $cell );
+		return false;
+	}
+	
+
+	/**
+	* Description: Crea el panel de la dirección seleccionada para el envio de productos
+	* Parameters : $cell = objeto html que contiene las dirección
+	*              address = objeto Address
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var createTmplPanelSelectedAddress = function( $cell, address ){
+		$.template('createPanelSelectedAddres', tmpPanelSelectedAddres);
+		var $selectedAddress = $.tmpl( 'createPanelSelectedAddres', address );
+		$selectedAddress.insertBefore( $cell );
+		goToContent( $selectedAddress, 40 );
+		return false;
+	}
+	
+
+	/**
+	* Description: Crear el panel con el mensaje de error cuando se edita una dirección seleccionada
+	*              para envio y pierde la cobertura.
+	* Parameters : $cell = objeto html que contiene las dirección
+	*              address = objeto Address
+	* Created    : 2016/07/05 - Modified:
+	*/
+	var createTmpNotHasAddress = function( title, messages ){
+		var data = { 'title' : title, 'messages': messages };
+		$.template('createPanelNotHasAddress', tmpNotHasAddress);
+		$.tmpl( 'createPanelNotHasAddress', data ).prependTo( $('#standard-shipping') );
+		return false;
+	}
+	
+
+	/**
+	* Description: Ordena los paneles con las direcciones en pantalla, cuando se crea
+	*              o elimina una direccion.
+	* Parameters : address = objeto Address
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var orderAddressList = function( address ){
+		var $address       = $( '#registered-addresses-delivery' ),
+			$bodyAddress   = $address.find( '#body-registered-addresses-delivery' );
+		
+		$bodyAddress.find( $('.my-address[data-addresskey="' + address.addressKey + '"]') ).parent('.col-md-6').remove()
+			.end().end().find('hr').remove();
+		
+		if( $bodyAddress.find( '.my-address' ).length === 0 ){
+			if( !$('#selected-delivery-address').length ){
+				$('#not-has-address').remove();
+				createTmpNotHasAddress( '¿Y a donde enviamos tu pedido?', 'No tienes direcciones de envío registradas en tu cuenta, te invitamos a crear una.' );
+			}
+			$address.addClass( 'hidden' );
+		}
+		else if( $bodyAddress.find( '.my-address' ).length >= 2 ){
+			$bodyAddress.children( '.col-md-6' ).each( function( i ){
+				if( (i !== 0) && ( (i % 2) === 0 ) ){
+					$(this).before( $('<hr>', { 'class' : 'hidden-xs' } ) );
+				}
+			} );
+		}
+		return false;
+	}
+	
+
+	/**
+	* Description: Realiza las operaciones basicas de creado, borrado y eliminado de
+	*              direcciones, consume un servicio via ajax para enviar información al servidor.
+	* Parameters : address = objeto Address
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var operationAddress = function( address, hasGrocery ){
+		try {
+			$.ajax({
+				url      : 'ShippingAddressAction',
+				type     : 'post',
+				data     : address,
+				dataType : 'json',
+				beforeSend: function(){ openLoadCounter(); }
+			} ).done( function( data ) {
+				if( data !== null ){
+					if( !data.error ){
+						var response = '';
+						switch( address.task ) {
+							case 'create':
+								response = data.successString.split('|');
+								address.addressKey = response[0];
+								address.addressName = response[1];
+								address.dependency = response[2];
+								addAddress( address, hasGrocery, response[3] );
+								
+								if( clickDriveInPickUp ){
+									$('#drivein-pickup').attr( 'data-standardshipping', true );
+									setTimeout( function(){ $('.pickup a').trigger( 'click' ); }, 250 );
+								}
+								break;
+							case 'delete':
+								if( $('#modalAddressDelete').length ){
+									$('#modalAddressDelete').modal( 'hide').remove();
+								}
+								orderAddressList( address );
+								break;
+							case 'update':
+								response = data.successString.split('|');
+								if( response[0] !== '' ){
+									address.dependency = response[0];
+								}
+								updateAddress( address, hasGrocery, response[1], response[2], response[3] );
+								break;
+						}
+					} else {
+						showMessagesAlert( data.errorString, 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+
+					}
+				} else {
+					showMessagesAlert( 'La operación sobre la dirección devolvió un valor nulo', 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+				}
+			} )
+			.fail( function( jqXHR, textStatus, errorThrown ) {
+				var data = {
+						title    : 'Error...',
+						messages : 'La operación sobre la dirección presento un error. ' + jqXHR.status + ' - ' + textStatus + ' - ' + errorThrown,
+						css      : 'alert-danger',
+						parent   : $('.body-tap-shipping')
+					};
+				ajaxFailStatusAction( jqXHR, data );
+
+			} )
+			.always( function() {
+				$('#load-counter').modal('hide');
+				$modal.modal( 'hide' );
+			} );
+		} catch (e) {
+			console.log( 'Operation Address catch: ' + e.message );
+
+		}
+	}
+	
+
+	/**
+	* Description: Consulta si una dirección tiene cobertura de envío de productos de alimentos
+	* Parameters : address = objeto Address
+	*              $selectDeliveryAddress = html object
+	* Created    : 2016/07/11 - Modified:
+	*/
+	var validateAddressCoverage = function ( address, $selectDeliveryAddress ){
+		var addressData = {
+			addressKey  : address.addressKey,
+			addressName : address.addressName, 
+			dependency  : address.dependency,
+			selectedAddressName : ''
+		};
+		
+		if( $selectDeliveryAddress.length ){
+			addressData.selectedAddressName = $selectDeliveryAddress.attr('data-addressname');
+		}
+
+		try {
+			$.ajax({
+				url      : 'ShippingDefaultAddressAction',
+				type     : 'post',
+				data     : addressData,
+				dataType : 'json',
+				beforeSend: function(){ openLoadCounter(); }
+			} ).done( function( data ) {
+				if( data !== null ){
+					if( !data.error ){
+						var response = data.successString.split('|');
+						address.dependency = response[0];
+						
+						if( address.dependency > 0 ){
+							if( $selectDeliveryAddress.length ){
+								$selectDeliveryAddress.attr('data-addresskey', response[3]);
+							} else{
+								$('#body-registered-addresses-delivery').find('.my-address[data-addresskey="' + response[2] + '"]').attr( 'data-addresskey', response[3] );
+							}
+							setShippingAddress( address, $selectDeliveryAddress );
+							
+						} else if ( address.dependency === '-1' || address.dependency === '-2' ){
+							updatePanelAddress( address );
+							showMessagesAlert( response[1], 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+						}
+					} else {
+						showMessagesAlert( data.errorString, 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+					}
+				} else {
+					showMessagesAlert( 'La operación de validación de cobertura devolvió un valor nulo', 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+				}
+			} )
+			.fail( function( jqXHR, textStatus, errorThrown ) {
+				var data = {
+						title    : 'Error...',
+						messages : 'La operación de validación de cobertura presento un error. ' + jqXHR.status + ' - ' + textStatus + ' - ' + errorThrown,
+						css      : 'alert-danger',
+						parent   : $('.body-tap-shipping')
+					};
+				ajaxFailStatusAction( jqXHR, data );
+			} )
+			.always( function() {
+				$('#load-counter').modal('hide');
+			 	$modal.modal( 'hide' );
+			} );
+		} catch (e) {
+			console.log( 'Validate Address Coverage catch: ' + e.message );
+		}
+	}
+	
+
+	var setShippingAddress = function( deliveryDataAddress, $selectDeliveryAddress ){
+		if( $selectDeliveryAddress.length ){
+			var $selectedDataAddress = $selectDeliveryAddress.find('.my-addres-data'),
+				selectedDataAddress = new Address( '',
+					$selectDeliveryAddress.attr('data-addresskey'),
+					$selectDeliveryAddress.attr('data-addressname'),
+					$selectDeliveryAddress.attr('data-dependency'),
+					$selectedDataAddress.filter('.name').text().trim(),
+					$selectedDataAddress.filter('.lastName').text().trim(),
+					$selectedDataAddress.filter('.address').text().trim(),
+					$selectedDataAddress.filter('.department').text().trim(),
+					$selectedDataAddress.filter('.department').data('value').trim(),
+					$selectedDataAddress.filter('.city').text().trim(),
+					$selectedDataAddress.filter('.city').data('value').trim(),
+					$selectedDataAddress.filter('.telephone').text().trim(),
+					regionName
+				);
+			
+			$selectDeliveryAddress.attr('data-addresskey', deliveryDataAddress.addressKey );
+			updatePanelAddress( deliveryDataAddress );
+			orderAddressList( deliveryDataAddress );
+			addAddressToList( selectedDataAddress );
+		} else {
+			orderAddressList( deliveryDataAddress );
+			addSelectedShippingAddress( $('#not-has-address'), deliveryDataAddress );
+			$('.btn-shipping').prop( { disabled: false } );
+		}
+		return false;
+	}
+
+	var $standardShipping = $('#standard-shipping'),
+		$modal     = $standardShipping.find('#modal-address'),
+		hasGrocery = $standardShipping.data( 'hasgrocery' ),
+		regionName = $standardShipping.data( 'regionname' );
+
+	loadDepartmentCities( $modal.find('#department'), $modal.find('#city') );
+	
+	$standardShipping.on( 'click', '.edit-address', function( e ) { // Editar dirección
+		e.preventDefault();
+		var $myAddress   = $(this).closest('.my-address'),
+			$myAddressData = $myAddress.find('.panel-body .my-addres-data'),
+			myAddress      = new Address( 
+				'update',
+				$myAddress.attr('data-addresskey'),
+				$myAddress.attr('data-addressname'),
+				$myAddress.attr('data-dependency'),
+				$myAddressData.filter('.name').text().trim(),
+				$myAddressData.filter('.lastName').text().trim(),
+				$myAddressData.filter('.address').text().trim(),
+				$myAddressData.filter('.department').text().trim(),
+				$myAddressData.filter('.department').data('value'),
+				$myAddressData.filter('.city').text().trim(),
+				$myAddressData.filter('.city').data('value'),
+				$myAddressData.filter('.telephone').text().trim(),
+				regionName
+			);
+		
+		$modal.data( 'operation', { 'name' : 'update', 'address' : myAddress } );
+		$modal.find('.modal-title').text( 'Editar dirección' );
+		$modal.find('legend').text( 'Actualiza los datos de tu dirección.' );
+		$modal.find('#name').val( myAddress.name );
+		$modal.find('#lastName').val( myAddress.lastName );
+		$modal.find('#address').val( myAddress.address );
+		$modal.find('#department option[value="' + myAddress.departmentId + '"]').prop('selected', 'selected').change();
+		$modal.find('#city').prop( "disabled", false ).find('option[value="' + myAddress.cityId + '"]').prop('selected', 'selected').change();
+		$modal.find('#telephone').val( myAddress.telephone );
+		$modal.find('#button-create-address').text('Guardar dirección');
+		$modal.modal('show');
+	} )
+	.on( 'click', '.show-modal-address', function( e ){ // Mostrar ventana modal
+		e.preventDefault();
+		$('.messages-alert .close').trigger('click');
+		
+		$modal.data( 'operation', { 'name' : 'create' } );
+		$modal.find('.modal-title').text( 'Crear dirección' );
+		$modal.find('legend').text( 'Ingresa los datos de tu dirección.' );
+		$modal.find('input[type]').val( '' );
+		$modal.find('#country').val('Colombia');
+		$modal.find('select option[value=""]').prop('selected', 'selected').change();
+		$modal.find('#button-create-address').text('Crear dirección');
+		$modal.modal('show');
+	} )
+	.on( 'click', '.delete-address', function( e ){ // Eliminar dirección
+		e.preventDefault();
+		var data = {
+				id      : 'modal-delete-address',
+				title   : 'Eliminar dirección',
+				content : '<p>¿Esta seguro que desea eliminar la dirección?</p>',
+				buttontext01 : 'Cancelar',
+				buttontext02 : 'Aceptar' 
+			},
+			$modal = createTmpModalWindow( 'small', data ),
+			myAddress  = new Address( 'delete', $(this).closest('.my-address').attr('data-addresskey') );
+		
+		$modal.on( 'click', 'button.btn-warning', function( e ){
+			e.preventDefault();
+			operationAddress( myAddress );
+			$modal.modal( 'hide');
+		} )
+		.on( 'shown.bs.modal', function( e ){
+			$(this).find('.btn-warning').first().focus();
+		} )
+		.on( 'hidden.bs.modal', function( e ) {
+			$(this).remove();
+		} )
+		.appendTo('body')
+		.modal('show');
+	} )
+	.on( 'click', '.my-address-setup', function( e ){ // Establecer dirección de envío
+		e.preventDefault();
+		$('.messages-alert .close').trigger('click');
+
+		var $deliveryAddress = $(this).closest('.my-address'),
+			$deliveryDataAddress = $deliveryAddress.find('.my-addres-data'),
+			deliveryDataAddress = new Address( '',
+				$deliveryAddress.attr('data-addresskey'),
+				$deliveryAddress.attr('data-addressname'),
+				$deliveryAddress.attr('data-dependency'),
+				$deliveryDataAddress.filter('.name').text().trim(),
+				$deliveryDataAddress.filter('.lastName').text().trim(),
+				$deliveryDataAddress.filter('.address').text().trim(),
+				$deliveryDataAddress.filter('.department').text().trim(),
+				$deliveryDataAddress.filter('.department').data('value').trim(),
+				$deliveryDataAddress.filter('.city').text().trim(),
+				$deliveryDataAddress.filter('.city').data('value').trim(),
+				$deliveryDataAddress.filter('.telephone').text().trim(),
+				regionName
+			),
+			$selectDeliveryAddress = $( '#selected-delivery-address' );
+
+		if( hasGrocery ){
+			validateAddressCoverage( deliveryDataAddress, $selectDeliveryAddress );
+		} else {
+			setShippingAddress( deliveryDataAddress, $selectDeliveryAddress );
+		}
+	} );
+
+	$modal.on( 'click', '#button-create-address', function( e ){ // Boton ventana modal para crear o editar dirección
+		e.preventDefault();
+		var operation    = $modal.data('operation'),
+			areDifferent = true, // Validate for update method
+			address      = new Address(
+				operation.name, '', '', '',
+				$modal.find('#name').val().trim(),
+				$modal.find('#lastName').val().trim(),
+				$modal.find('#address').val().trim(),
+				$modal.find('#department option:selected').text().trim(),
+				$modal.find('#department option:selected').val().trim(),
+				$modal.find('#city option:selected').text().trim(),
+				$modal.find('#city option:selected').val().trim(),
+				$modal.find('#telephone').val().trim(),
+				regionName
+			);
+
+		if ( operation.name === 'update' ){
+			if ( comparedAddress( address, operation.address ) ){
+				address.addressKey  = operation.address.addressKey;
+				address.addressName = operation.address.addressName;
+				address.dependency  = operation.address.dependency;
+			} else {
+				areDifferent = false;
+			}
+		}
+
+		if( areDifferent ){
+			if( validateAddresModalForm( $modal.find('#form-address') ) ){
+				operationAddress( address, hasGrocery );
+			}
+		}
+	} )
+	.on('hidden.bs.modal', function (e) {
+		$modal.removeData('operation');
+		var instance = $modal.find('#form-address').data('formValidation');
+		if (instance) {
+			instance.destroy();
+		}
+		if( clickDriveInPickUp != undefined ){
+			clickDriveInPickUp = false;
+		}
+	} );
+}
+
+
+/* +++++++++++++++++++++++++ */
+/* +  CHECKOUT - SHIPPING  + */
+/* +++++++++++++++++++++++++ */
+
+if( $('#shipping-page').length ){
+	
+	/**
+	* Description: Carga las fechas y horas para drivein a traves de un llamado ajax
+	* Parameters : $driveIn = objeto html
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var configDriveIn = function( $driveIn ){
+		if( $driveIn.length ){
+			try {
+				$.ajax({
+					url      : 'DriveInAction',
+					type     : 'post',
+					dataType : 'json'
+				} )
+				.done( function( data ) {
+					if( data !== null ){
+						if( !data.error ){
+							var $driveInDates = $driveIn.find( '#driveinDate' ),
+								$driveInHours = $driveIn.find( '#driveinHour' ),
+								$driveAddStandard = $driveIn.find( '#driveInAddStandar' ),
+								$backdriveInHours = $('<select/>'),
+								$driveProducts    = $driveIn.find( '#driveinProducts' ),
+								$driveShowProductsList = $driveIn.find( '.see-summary-products' );
+							
+							// Adicionar las opciones a los select
+							addOptionToSelect( $driveInDates, data.days, 'driveInDays', tmpDriveInDays, 'Dia:', false );
+							addOptionToSelect( $driveInHours, data.days, 'driveInHours', tmpDriveInHours, 'Hora:', true );
+							// Cargar nombre y dirección del almacén
+							$driveIn.find('#driveinStore').empty().append( $('<strong>', { 'text' : data.storeName } ) );
+							$driveIn.find('#driveinAddress').html( data.storeAddress );
+							$driveAddStandard.prop( 'checked', false );
+							
+							$backdriveInHours.append( $driveInHours.children().clone().show() );
+							
+							// Asignar evento Change a los controles select
+							$driveInDates.off( 'change' ).on( 'change', function( e ){
+								if( $(this).val() !== ''){
+									var $newOptions = $backdriveInHours.find( 'option[value^="' + $(this).val() + '"]' ).clone();
+									$driveInHours.children( 'option').remove();
+									$driveInHours.append( $backdriveInHours.children( ':eq(0)' ).clone() ).append( $newOptions ).prop( "disabled", false ).val('').change();
+								} else {
+									$driveInHours.prop( "disabled", true ).val('');
+								}
+								$driveInHours.children('option[value=""]').show().prop( 'selected', 'selected' ).change();
+							} );
+							
+							$driveAddStandard.off( 'change' ).on('change', function( e ){
+								if( $(this).is(":checked") ){
+									$(this).val( true );
+									$driveShowProductsList.hide();
+									$driveProducts.collapse('hide').empty();
+									$('#standarProducts').collapse('hide').empty();
+									$driveIn.attr('data-standardmethod', true);
+									$driveIn.find('#drivein-form').formValidation('resetForm', true);
+									$driveInDates.prop( 'disabled', true ).val('').change();
+									$driveInHours.val( '' ).change();
+									showStandardShippingIntoPickUpDriveInPanel( 1 );
+								} else {
+									$(this).val( false );
+									$driveShowProductsList.show();
+									$('#standarProducts').collapse('hide').empty();
+									$driveIn.attr('data-standardmethod', false);
+									$driveInDates.prop( 'disabled', false );
+									showStandardShippingIntoPickUpDriveInPanel( 0 );
+								}
+							} );
+							
+							$driveIn.show();
+						} else {
+							showMessagesAlert( data.errorString, 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+						}
+					} else {
+						showMessagesAlert( 'La configuración de DriveIn devolvió un valor nulo', 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+					}
+				} )
+				.fail( function( jqXHR, textStatus, errorThrown ) {
+					var data = {
+							title    : 'Error...',
+							messages : 'La configuración de DriveIn presento un error. ' + jqXHR.status + ' - ' + textStatus + ' - ' + errorThrown,
+							css      : 'alert-danger',
+							parent   : $('.body-tap-shipping')
+						};
+					ajaxFailStatusAction( jqXHR, data );
+				} );
+			} catch ( e ) {
+				console.log( 'Config DriveIn catch: ' + e.message );
+			}
+		}
+	}
+
+	/**
+	* Description: Configuración del plugin de validación para el formulario drivein
+	* Parameters : $form = formulario drivein
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var validateDriveInForm = function( $form ){
+		$form.formValidation( {
+			autoFocus: true,
+			framework: 'bootstrap',
+			locale: 'es_ES',
+			fields: {
+				driveinDate: {
+					validators: { notEmpty: { message: 'Por favor seleccione un día.' } }
+				},
+				driveinHour: {
+					validators: { notEmpty: { message: 'Por favor seleccione una hora.' } }
+				}
+			}
+		} );
+		$form.data('formValidation').validate();
+		return $form.data('formValidation').isValid();
+	}
+
+	/**
+	* Description: Carga los departamentos, ciudades y almacenes pickup a traves de un llamado ajax
+	* Parameters : $pickUp = objeto html
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var configPickUp = function( $pickUp ){
+		if( $pickUp.length ){
+			try {
+				$.ajax({
+					url      : 'PickUpAction',
+					type     : 'post',
+					dataType : 'json'
+				} )
+				.done( function( data ) {
+					if( data !== null ){
+						if( !data.error ){
+							var $pickUpDepartments = $pickUp.find('#pickupDepartment'),
+								$pickUpCities      = $pickUp.find('#pickupCity'),
+								$pickUpStores      = $pickUp.find('#pickupStore'),
+								$pickUpPanel       = $pickUp.find('.alert'),
+								$pickUpAddStandard = $pickUp.find( '#pickUpAddStandar' ),
+								$backUpCities      = $('<select/>'),
+								$backUpStores      = $('<select/>'),
+								$pickUpProducts    = $pickUp.find( '#pickupProducts' ),
+								$pickUpShowProductsList = $pickUp.find( '.see-summary-products' );
+							
+							$pickUpPanel.find('li').empty();
+							
+							// Adicionar las opciones a los select
+							addOptionToSelect( $pickUpDepartments, data.departments, 'pickUpDepartments', tmpPickUpDepartments, 'Departamento:', false );
+							addOptionToSelect( $pickUpCities, data.departments, 'pickUpCities', tmpPickUpCities, 'Ciudad:', true );
+							addOptionToSelect( $pickUpStores, data.departments, 'pickUpStores', tmpPickUpStores, 'Almacén:', true );
+							$pickUpAddStandard.prop( 'checked', false );
+							
+							$backUpCities.append( $pickUpCities.children( "option" ).show().clone() );
+							$backUpStores.append( $pickUpStores.children( "option" ).show().clone() );
+							
+							// Asignar evento Change a los controles select
+							$pickUpDepartments.off('change').on('change', function( e ){
+								if( $(this).val() !== '' ){
+									var $newOptions = $backUpCities.find('option[data-departmentkey="' + $(this).val() + '"]').clone();
+									$pickUpCities.children( 'option').remove();
+									$pickUpCities.append( $backUpCities.children(':eq(0)').clone() ).append( $newOptions ).prop( "disabled", false ).val('').change();
+								} else {
+									$pickUpCities.prop( "disabled", true ).val('').change();
+								}
+							} );
+							
+							$pickUpCities.off('change').on('change', function( e ){
+								if( $(this).val() !== '' ){
+									var $newOptions = $backUpStores.find('option[data-citykey="' + $(this).val() + '"]').clone();
+									$pickUpStores.children( 'option').remove();
+									$pickUpStores.append( $backUpStores.children(':eq(0)').clone() ).append( $newOptions ).prop( "disabled", false ).val('').change();
+								} else {
+									$pickUpStores.prop( "disabled", true ).val('').change();
+								}
+							} );
+							
+							$pickUpStores.off('change').on('change', function( e ){
+								if( $(this).val() !== '' ){
+									var $option = $(this).children('option:selected');
+									$pickUpPanel.find('#pickupName').html( $option.text() );
+									$pickUpPanel.find('#pickupAddress').html('Dirección: ' + $option.data('address') );
+									$pickUpPanel.find('#pickupTelephone').html('Teléfono: ' + $option.data('contact') );
+									$pickUpPanel.show();
+								} else {
+									$pickUpPanel.hide().find('li').empty();
+								}
+							} );
+							
+							$pickUpAddStandard.off('change' ).on('change', function( e ){
+								if( $(this).is(":checked") ){
+									$(this).val( true );
+									$pickUpShowProductsList.hide();
+									$pickUpProducts.collapse('hide').empty();
+									$('#standarProducts').collapse('hide').empty();
+									$pickUp.attr('data-standardmethod', true);
+									$pickUp.find('#pickup-Form').formValidation('resetForm', true);
+									$pickUp.find('select').prop( "disabled", true ).val('').change();
+									$pickUpPanel.hide().find('li').empty();
+									$pickUp.find('.form-group').removeClass('has-success has-error');
+									showStandardShippingIntoPickUpDriveInPanel( 1 );
+								} else {
+									$(this).val( false );
+									$pickUpShowProductsList.show();
+									$('#standarProducts').collapse('hide').empty();
+									$pickUp.attr('data-standardmethod', false);
+									$pickUpDepartments.prop( "disabled", false );
+									showStandardShippingIntoPickUpDriveInPanel( 0 );
+								}
+							} );
+							
+							$pickUp.show();
+						} else {
+							showMessagesAlert( data.errorString, 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+						}
+					} else {
+						showMessagesAlert( 'La configuración de DriveIn devolvió un valor nulo', 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+					}
+				} )
+				.fail( function( jqXHR, textStatus, errorThrown ) {
+					var data = {
+							title    : 'Error...',
+							messages : 'La configuración de DriveIn presento un error. ' + jqXHR.status + ' - ' + textStatus + ' - ' + errorThrown,
+							css      : 'alert-danger',
+							parent   : $('.body-tap-shipping')
+						};
+					ajaxFailStatusAction( jqXHR, data );
+				} );
+			} catch ( e ) {
+				console.log( 'Config PickUp catch: ' + e.message );
+			}
+		}
+	}
+
+	/**
+	* Description: Configuración del plugin de validación para el formulario pickup
+	* Parameters : $form = formulario pickup
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var validatePickUpForm = function( $form ){
+		$form.formValidation( {
+			autoFocus: true,
+			framework: 'bootstrap',
+			locale: 'es_ES',
+			fields: {
+				pickupDepartment: {
+					validators: { notEmpty: { message: 'Por favor seleccione un departamento.' } }
+				},
+				pickupCity: {
+					validators: { notEmpty: { message: 'Por favor seleccione una ciudad.' } }
+				},
+				pickupStore: {
+					validators: { notEmpty: { message: 'Por favor seleccione un almacén.' } }
+				}
+			}
+		} );
+		
+		$form.data('formValidation').validate();
+		return $form.data('formValidation').isValid();
+	}
+
+	/**
+	* Description: Crea el listado de productos para drivein y pickup
+	* Parameters : $container = objeto html que contiene el listado de productos
+	               options = información de los productos
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var createDriveInProducts = function( $container, data ){
+		if( $container.children('.container-fluid').length === 0 ){
+			var $productList = $('<div>', { 'class' : 'container-fluid' } );
+			$.template('diveInProductList', tmpShippingProductList );
+			$.tmpl( 'diveInProductList', data ).appendTo( $productList );
+			$container.append( $productList );
+		}
+		return false;
+	}
+
+	/**
+	* Description: Muestra el listado de direcciones para envio estandar en drivein y pickup
+	* Parameters : show = parametro que indica si hay productos solo para envío estandar
+	* Created    : 2016/03/04 - Modified: 2016/05/17
+	*/
+	var showStandardShippingIntoPickUpDriveInPanel = function( show ){
+		var $driveInPickUp = $('#drivein-pickup');
+		
+		if( show ){
+			if( $driveInPickUp.find( '#standard > #standard-shipping').length === 0 ){
+				$('#delivery').find('#standard-shipping').appendTo( $driveInPickUp.find( '#standard' ) );
+			}
+			$driveInPickUp.find( '#standard' ).removeClass('hidden');
+		} else if( $driveInPickUp.find( '.add-standard-method:checked').length === 0 && !$driveInPickUp.data( 'standardshipping' ) ) {
+			$driveInPickUp.find( '#standard' ).addClass('hidden');
+		}
+	}
+
+	/**
+	* Description: set and show window modal for request user phone number
+	* Parameters : parameters = data about shipping method
+	* Created    : 2016/07/25 - Modified:
+	*/
+	var setModalWindowRequestPhoneNumber = function( parameters ){
+		var html  = '<form id="modal-phone-number" name="modal-phone-number" class="form-horizontal"><fieldset>';
+			html += '<legend>Es necesario que nos indiques un número de celular para contactarte antes de enviar tu mercado.</legend>';
+			html += '<div class="form-group"><label for="mobileNumber" class="col-sm-4 control-label hidden-xs">* Celular:</label>';
+			html += '<div class="col-sm-8"><input id="mobileNumber" name="mobileNumber" placeholder="* Número de celular" ';
+			html += 'pattern="[0-9]*" inputmode="numeric" class="form-control input-lg" type="number"/></div></div></fieldset></form>';
+			
+		var data   = { id : 'modal-telephone-User', title : 'Actualiza tus datos', content : html, buttontext01 : 'Cancelar', buttontext02 : 'Aceptar' },
+			$modal = createTmpModalWindow( 'normal', data ),
+			$form  = $modal.find('#modal-phone-number').formValidation( {
+				autoFocus: true,
+				framework: 'bootstrap',
+				locale: 'es_ES',
+				fields: {
+					mobileNumber: {
+						validators: { notEmpty: { message: 'Por favor ingrese un número de celular valido.' }, digits : {}, stringLength: { max: 10, min: 10, message: 'Por favor ingrese un número de celular valido.' } }
+					}
+				}
+			} );
+
+		$modal.on( 'click', '.btn-warning', function( e ){
+			e.preventDefault();
+			$form.data('formValidation').validate();
+			if( $form.data('formValidation').isValid() ){
+				parameters.userTelephone = $form.find('#mobileNumber').val().trim();
+				$modal.modal( 'hide');
+				confirmShippingMethod( parameters );
+			}
+		} )
+		.on( 'shown.bs.modal', function( e ){
+			$(this).find('.btn-warning').first().focus();
+		} )
+		.on( 'hidden.bs.modal', function( e ) {
+			$(this).remove();
+		} )
+		.appendTo('body')
+		.modal( { keyboard: false, show : true } );
+	}
+	
+	
+	/**
+	* Description: confirm action for shipping page 
+	* Parameters : parameters = data about shipping method
+	* Created    : 2016/07/25 - Modified:
+	*/
+	var confirmShippingMethod = function ( parameters ){
+		try {
+			$.ajax( {
+				url      : 'sendShippingFormAction',
+				type     : 'post',
+				data     : parameters,
+				dataType : 'json',
+				beforeSend: function(){ openLoadCounter(); }
+			} )
+			.done( function( data ) {
+				if( data !== null ){
+					if( !data.error ){
+						var options = { 'Shipping' :  'true', 'DriveIn' : parameters.driveInEnable, 'PickUp' : parameters.pickUpEnable };
+						if( parameters.shippingAddress === '' ){
+							options.shipping = 'false';
+						}
+						funnelSteps( 3, options, null );
+						redirect(data.successString);
+					} else {
+						showMessagesAlert( data.errorString, 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+					}
+				} else {
+					showMessagesAlert( 'La selección del método de envío o entrega de productos devolvió un valor nulo', 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+				}
+			} )
+			.fail( function( jqXHR, textStatus, errorThrown ) {
+				var data = {
+						title    : 'Error...',
+						messages : 'La selección del método de envío o entrega de productos presento un error. ' + jqXHR.status + ' - ' + textStatus + ' - ' + errorThrown,
+						css      : 'alert-danger',
+						parent   : $('.body-tap-shipping')
+					};
+				ajaxFailStatusAction( jqXHR, data );
+			} )
+			.always( function( data, textStatus, jqXHR ){
+				$('#load-counter').modal('hide');
+			} );
+		} catch ( e ) {
+			showMessagesAlert( 'Error...', 'Comfirm Shipping method catch: ' + e.message, 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+		}
+	}
+	
+	
+	var $shipping      = $('#shipping-page'),
+		$standard      = $shipping.find('#delivery'),
+		$driveInPickUp = $shipping.find('#drivein-pickup'),
+		haveTelephone  = $shipping.data('havetelephone'),
+		clickDriveInPickUp = false;
+
+	if( !$standard.find( '#not-has-address').length ){
+		$( '.btn-shipping' ).prop( { disabled: false, } );
+	}
+	
+	$shipping.on('click', '.delivery a', function( e ){
+		e.preventDefault();
+		openLoadCounter();
+		$('.messages-alert .close').trigger('click');
+		
+		if( $driveInPickUp.find( '#standard-shipping' ).length ){
+			$driveInPickUp.find( '#standard' ).addClass( 'hidden').find( '#standard-shipping' ).appendTo( $standard );
+		}
+		$(this).tab('show');
+		$('#load-counter').modal('hide');
+	} )
+	.on('click', '.pickup a', function( e ){
+		e.preventDefault();
+		
+		var $notHasAddress = $standard.find( '#not-has-address');
+		
+		if( !$notHasAddress.length ){
+			openLoadCounter();
+			$('.messages-alert .close').trigger('click');
+	
+			if( !$(this).parent('li').hasClass('active') ){
+				configDriveIn( $driveInPickUp.find('#drivein') );
+				configPickUp( $driveInPickUp.find('#pickup') );
+				if( $driveInPickUp.data('standardshipping') ){
+					$standard.find('#standard-shipping').appendTo( $driveInPickUp.find( '#standard' ).removeClass( 'hidden') );
+				}
+				$(this).tab('show');
+			}
+			$('#load-counter').modal('hide');
+		} else {
+			if( $('#body-registered-addresses-delivery').length && $('#body-registered-addresses-delivery').find('.my-address').length ){
+
+				var data = {
+						id      : 'modal-select-address',
+						title   : 'Seleccionar dirección',
+						content : '<p>En estos momentos <b>no tienes una dirección seleccionada</b> para enviar tus pedidos. Te invitamos a seleccionar una existente o crear una dirección que tenga cobertura valida.</p>',
+						buttontext01 : 'Cancelar',
+						buttontext02 : 'Aceptar' 
+					},
+					$modal = createTmpModalWindow( 'normal', data );
+				
+				$modal.on( 'click', 'button.btn-warning', function( e ){
+					e.preventDefault();
+					$modal.modal( 'hide');
+				} )
+				.on( 'shown.bs.modal', function( e ){
+					$(this).find('.btn-warning').first().focus();
+				} )
+				.on( 'hidden.bs.modal', function( e ) {
+					clickDriveInPickUp = false;
+					$(this).remove();
+				} )
+				.appendTo('body')
+				.modal('show');
+				
+			} else {
+				var $modal     = $standardShipping.find('#modal-address');
+				clickDriveInPickUp = true;
+				
+				$modal.data( 'operation', { 'name' : 'create' } );
+				$modal.find('.modal-title').text( 'Crear dirección' );
+				$modal.find('legend').text( 'Para poder continuar con el proceso necesitamos algunos datos, te invitamos ingresa la siguiente información.' );
+				$modal.find('input[type]').val( '' );
+				$modal.find('#country').val('Colombia');
+				$modal.find('select option[value=""]').prop('selected', 'selected').change();
+				$modal.find('#button-create-address').text('Crear dirección');
+				$modal.modal('show');
+			}
+		}
+		
+	} )
+	.on('click', '.see-summary-products', function( e ){
+		e.preventDefault();
+		var $productList = $( $(this).attr('href') ); //'standar', pickUp, driveIn
+		var dataAjax = { task : '', driveInState : false, pickupState : false };
+		
+		if( $productList.find('.product-list .product').length === 0 ){
+			if( $(this).attr('href') == '#driveinProducts' ){
+				dataAjax.task = 'driveIn';
+			} else if ( $(this).attr('href') == '#pickupProducts' ) {
+				dataAjax.task = 'pickUp';
+			} else if ( $(this).attr('href') == '#standarProducts' ) {
+				dataAjax.task = 'standar';
+				dataAjax.driveInState = $('#driveInAddStandar').val();
+				dataAjax.pickupState  = $('#pickUpAddStandar').val();
+			}
+			
+			try {
+				$.ajax( {
+					url      : 'ShippingProductsAction',
+					data     : dataAjax,
+					type     : 'post',
+					dataType : 'json',
+					beforeSend: function(){ openLoadCounter(); }
+				} )
+				.done( function( data ) {
+					if( data !== null ){
+						if( !data.error ){
+							createDriveInProducts( $productList, data );
+						} else {
+							showMessagesAlert( data.errorString, 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+						}
+					} else {
+						showMessagesAlert( 'La consulta de productos devolvió un valor nulo', 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+					}
+				} )
+				.fail( function( jqXHR, textStatus, errorThrown ) {
+					var data = {
+							title    : 'Error...',
+							messages : 'La selección del método de pago presento un error. ' + jqXHR.status + ' - ' + textStatus + ' - ' + errorThrown,
+							css      : 'alert-danger',
+							parent   : $('.body-tap-shipping')
+						};
+					ajaxFailStatusAction( jqXHR, data );
+				} )
+				.always( function( data, textStatus, jqXHR ){
+					$productList.collapse('toggle');
+					$('#load-counter').modal('hide');
+				} );
+			} catch ( e ) {
+				console.log( 'See Summary Products catch: ' + e.message );
+			}
+		} else{
+			$productList.collapse('toggle');
+		}
+	} )
+	.on('click', '.btn-shipping', function( e ){
+		e.preventDefault();
+		$('.messages-alert .close').trigger('click');
+		
+		var parameters = {
+			shippingAddress   : '',
+			driveInEnable     : 'false',
+			userScheduleDrive : '',
+			pickUpEnable      : 'false',
+			pickUpDepartment  : '',
+			pickUpCity        : '',
+			pickUpStore       : '',
+			dependence        : '',
+			userTelephone     : ''
+		};
+		
+		if( $standard.length && $standard.hasClass('active') ){
+			var $addressShipping = $standard.find( '.panel-warning.my-address');
+			
+			if( $addressShipping.length ){
+				parameters.shippingAddress = $addressShipping.attr( 'data-addresskey' );
+			} else {
+				showMessagesAlert( 'No existe una dirección de envío seleccionada', 'alert-danger', $('.body-tap-shipping'), 'prepend', 0, true );
+				return false;
+			}
+		} else if( $driveInPickUp.length && $driveInPickUp.hasClass('active') ){
+			
+			if( $driveInPickUp.find('#drivein-form').length && $driveInPickUp.find('#drivein').attr('data-standardmethod') === 'false' ){ //if( $driveInPickUp.find('#drivein-form').length && !$driveInPickUp.find('#drivein').data('standardmethod') )
+				var $driveInForm = $driveInPickUp.find('#drivein-form');
+				
+				if( validateDriveInForm( $driveInForm ) ){
+					parameters.driveInEnable    = 'true';
+					parameters.userScheduleDrive = $driveInForm.find('#driveinHour' ).val();
+				} else {
+					$driveInForm.data('formValidation').getInvalidFields().eq( 0 ).focus();
+					return false;
+				}
+			}
+			if( $driveInPickUp.find('#pickup-Form').length && $driveInPickUp.find('#pickup').attr('data-standardmethod') === 'false' ){ //$driveInPickUp.find('#pickup-Form').length && !$driveInPickUp.find('#pickup').data('standardmethod')
+				var $pickUpForm = $driveInPickUp.find('#pickup-Form');
+				
+				if( validatePickUpForm( $pickUpForm ) ){
+					parameters.pickUpEnable     = 'true';
+					parameters.pickUpDepartment = $pickUpForm.find('#pickupDepartment').val();
+					parameters.pickUpCity       = $pickUpForm.find('#pickupCity').val();
+					parameters.pickUpStore      = $pickUpForm.find('#pickupStore').val();
+					parameters.dependence       = $pickUpForm.find('#pickupStore option:selected').data('dependence');
+				} else {
+					$pickUpForm.data('formValidation').getInvalidFields().eq( 0 ).focus();
+					return false;
+				}
+			}
+			if( $driveInPickUp.find('#standard').length && !$driveInPickUp.find('#standard').hasClass('hidden') ){
+				var $otherStandard = $driveInPickUp.find('#standard');
+				if( $otherStandard.find('#selected-delivery-address').length ){
+					parameters.shippingAddress = $otherStandard.find('#selected-delivery-address').attr('data-addresskey');
+				} else {
+					showMessagesAlert( 'No existe una dirección de envío seleccionada', 'alert-danger', $otherStandard, 'prepend', 0, true );
+					return false;
+				}
+			}
+		}
+
+		if( !haveTelephone ){
+			setModalWindowRequestPhoneNumber( parameters );
+		} else {
+			confirmShippingMethod( parameters );
+		}
+	} );
+}
+
+
+/* ++++++++++++++++++++++++ */
+/* +  CHECKOUT - PAYMENT  + */
+/* ++++++++++++++++++++++++ */
+/**
+* Description: configura Eventos asociados a la pantalla payment
+* Created    : 2016/03/04 - Modified: 2016/05/17
+*/
+if( $('#payment-page').length ){
+	
+	/**
+	* Description: Objeto payment, el cual se envía en el llamado ajax, dependiendo del medio
+	*              de pago se cargan los valores.  
+	* Created    : 2016/04/07 - Modified:
+	*/
+	function Payment ( id, code, identitycard, identitycardtype, bank, dues, cardnumber, cardname, expirationmonth, expirationyear, verificationcode, clienttype ){
+		this.id                 = id;
+		this.code               = code;
+		this.identityCard       = identitycard;
+		this.identityCardType   = identitycardtype;
+		this.bank               = bank;
+		this.dues               = dues;
+		this.cardNumber         = cardnumber;
+		this.cardName           = cardname;
+		this.expirationMonth    = expirationmonth;
+		this.expirationYear     = expirationyear;
+		this.verificationCode   = verificationcode;
+		this.clientType         = clienttype;
+	}
+	
+	/**
+	* Description: Método personalizado de validación tarjetas bancolombia e-card e-prepagop 
+	*              para la libreria validation.io 
+	* Created    : 2016/12/22 - Modified:
+	*/
+	( function($) {
+		FormValidation.Validator.creditCardBC = {
+			validate: function(validator, $field, options) {
+				var patt = new RegExp(/(530695|517640)\d{10}/);
+				if ( patt.test( $field.val() ) ) {
+					var a = $field.val().split(''), n = 0;
+					for ( var i = a.length - 1; i >= 0; i-- ) {
+						if( (i % 2) === 0 ){
+							var v = a[i] * 2;
+							if( v > 9 ){
+								n = n + parseInt( v.toString().split('')[0] ) + parseInt( v.toString().split('')[1] );
+							} else { n = n + v; }
+						} else { n = n + parseInt( a[i] ); }
+					}
+					if( (n % 10) === 0 ) {
+						return true;
+					} else { return false; }
+				} else { return false; }
+			}
+		};
+	}(window.jQuery) );
+	
+	/**
+	* Description: inicializa los campos de los formularios de los medios de pago 
+	* Parameters : $parend = objet contenedor de los formularios
+	* Created    : 2016/04/07 - Modified:
+	*/
+	var setupPaymentMethodForm = function( $parend ){
+		$parend.find('input, select, button').not('.close').prop('disabled', true);
+		$parend.find('input').not('#exitoCardId, #debitCardId').val('');
+		$parend.find('select option[value=""]').prop('selected', true).change();
+		
+		if( $parend.find('.franchise') ){
+			$parend.find('.franchise').hide();
+		}
+		return false;
+	};
+	
+	/**
+	* Description: Configurar el plug in de validación para los formularios
+	*              de los medios de pago y la carga de valores según la selección 
+	* Parameters : $form = formulario del medio de pago seleccionado
+	* Created    : 2016/04/07 - Modified:
+	*/
+	var validatePaymentMethodForm = function( $form ){
+		switch( $form.attr('id') ) {
+			case 'exitoCard':
+				$form.formValidation( {
+					autoFocus: true,
+					framework: 'bootstrap',
+					locale: 'es_ES',
+					icon: {
+						valid: 'glyphicon glyphicon-ok',
+						invalid: 'glyphicon glyphicon-remove',
+						validating: 'glyphicon glyphicon-refresh'
+					},
+					fields: {
+						exitoCardId: {
+							validators: { notEmpty: { message: 'Por favor introduce el número de su documento de identidad.' }, digits : {}, stringLength: { max: 16 } }
+						},
+						exitoCardNumber: { validators: { notEmpty: { message: 'Por favor introduce un número de tarjeta.' }, stringLength: { message: 'Por favor introduce un número de tarjeta valido.', min: 15, max: 16 } }
+						},
+						exitoCardCvv : {
+							validators: { cvv: {}, notEmpty: {} }
+						},
+						exitoCardDues: {
+							validators: { notEmpty: { message: 'Por favor seleccione el número de cuotas.' } }
+						},
+						exitoCardMonth : {
+							validators: { notEmpty: { message: 'Por favor seleccione un mes de vencimiento.' } }
+						},
+						exitoCardYear : {
+							validators: { notEmpty: { message: 'Por favor seleccione un año de vencimiento.' } }
+						}
+					}
+				} )
+				.on('success.validator.fv', function(e, data) {
+					switch( data.field ) {
+						case 'exitoCardId':
+							payment.identityCard = data.element.val().trim();
+							break;
+						case 'exitoCardNumber':
+							if( data.validator === 'stringLength' ){
+								var $icon = data.element.data('fv.icon'),
+									bin = data.element.val().trim().substring(0,6),
+									$franchise = data.fv.$form.find('.franchise');
+
+								if ( bin == "532824" || bin == "524938" || bin == "555845" || bin == "519708" || bin == "522679" || bin == "522698" || bin == "519706"){
+									$icon.removeClass().addClass('form-control-feedback icoe-card-mastercard');
+									$franchise.show();
+								} else {
+									$icon.removeClass().addClass('form-control-feedback icoe-card');
+									$franchise.hide().find( 'input' ).val('').end().find('select option[value=""]').prop('selected', 'selected').change();
+								}
+								payment.cardNumber = data.element.val().trim();
+							}
+							break;
+						case 'exitoCardCvv':
+							payment.verificationCode = data.element.val().trim();
+							break;
+						case 'exitoCardDues':
+							payment.dues = data.element.val().trim();
+							break;
+						case 'exitoCardMonth':
+							payment.expirationMonth = data.element.val().trim();
+							break;
+						case 'exitoCardYear':
+							payment.expirationYear = data.element.val().trim();
+							break;
+					}
+				} )
+				.on('err.field.fv', function(e, data) {
+					if (data.field === 'exitoCardNumber') {
+						var $icon = data.element.data('fv.icon');
+						$icon.removeClass().addClass('form-control-feedback glyphicon glyphicon-remove');
+						var $franchise = data.fv.$form.find('.franchise');
+						$franchise.hide().find( 'input' ).val('').end().find('select option[value=""]').prop('selected', 'selected').change();
+					}
+				} );
+				break;
+			case 'creditCardBC':
+				// List of test credit card numbers that you want it to be passed although they can be invalid one  5193 8219 3534 4916
+				var TEST_CARD_NUMBERS_BC = ['5306951935344915', '5176408666658903'];
+				// We will transform those test card numbers into a valid one as below 5193821935344916
+				var VALID_CARD_NUMBER_BC = '5306951935344915';
+
+				$form.formValidation( {
+					autoFocus: true,
+					framework: 'bootstrap',
+					locale: 'es_ES',
+					icon: {
+						valid: 'glyphicon glyphicon-ok',
+						invalid: 'glyphicon glyphicon-remove',
+						validating: 'glyphicon glyphicon-refresh'
+					},
+					fields: {
+						creditCardNameBC: {
+							validators: { notEmpty: { message: 'Por favor introduce el nombre que esta en la tarjeta.' }, stringLength: { max: 80 }, regexp: { regexp: /^[a-zA-ZñÑ\s]+$/ } }
+						},
+						creditCardNumberBC: {
+							transformer: function( $field, validatorName, validator ) {
+								var value = $field.val();
+								if (value !== '' && $.inArray(value, TEST_CARD_NUMBERS_BC) != -1) {
+									return VALID_CARD_NUMBER_BC;
+								} else {
+									return value;
+								}
+							},
+							validators: { creditCardBC: { message: 'Por favor introduce un número de tarjeta valido.' } }
+						},
+						creditCardCvvBC: {
+							validators: { stringLength: { message: 'Por favor introduce el código de verificación, consta de 3 números', max: 3 } }
+						},
+						creditCardDuesBC: {
+							validators: { notEmpty: { message: 'Por favor seleccione el número de cuotas.' } }
+						},
+						creditCardMonthBC: {
+							validators: { notEmpty: { message: 'Por favor seleccione el mes de vencimiento.' } }
+						},
+						creditCardYearBC: {
+							validators: { notEmpty: { message: 'Por favor seleccione un año de vencimiento.' } }
+						}
+					}
+				} )
+				.on('success.validator.fv', function(e, data) {
+					switch( data.field ) {
+						case 'creditCardNameBC':
+							payment.cardName = data.element.val().trim();
+							break;
+						case 'creditCardNumberBC':
+							if ( data.validator === 'creditCardBC' ) {
+								var $icon = data.element.data('fv.icon');
+								$icon.removeClass().addClass('form-control-feedback icoe-card');
+							}
+							payment.cardNumber = data.element.val().trim();
+							break;
+						case 'creditCardCvvBC':
+							payment.verificationCode = data.element.val().trim();
+							break;
+						case 'creditCardDuesBC':
+							payment.dues = data.element.val().trim();
+							break;
+						case 'creditCardMonthBC':
+							payment.expirationMonth = data.element.val().trim();
+							break;
+						case 'creditCardYearBC':
+							payment.expirationYear = data.element.val().trim();
+							break;
+					}
+				} )
+				.on('success.field.fv', function(e, data) {
+					if (data.field === 'creditCardNumberBC') {
+						var patt = new RegExp(/(530695)\d{10}/);
+						if ( patt.test( e.target.value ) ) {
+							data.fv.$form.find('#creditCardDuesBC').val('1');
+							data.fv.$form.formValidation('revalidateField', 'creditCardDuesBC');
+							data.fv.$form.find('#creditCardDuesBC').attr( { 'disabled' : true } );
+							payment.dues = '1';
+						}
+					}
+				} )
+				.on('err.field.fv', function(e, data) {
+					if (data.field === 'creditCardNumberBC') {
+						var $icon = data.element.data('fv.icon');
+						$icon.removeClass().addClass('form-control-feedback glyphicon glyphicon-remove');
+
+						data.fv.$form.find('#creditCardDuesBC').attr( { 'disabled' : false } );
+						data.fv.resetField( $('#creditCardDuesBC'), false );
+						payment.dues = '';
+					}
+				} );
+				break;
+			case 'creditCard':
+				// List of test credit card numbers that you want it to be passed although they can be invalid one
+				var TEST_CARD_NUMBERS = ['9955555555555501', '9955555555555504', '9955555555555515'];
+				// We will transform those test card numbers into a valid one as below
+				var VALID_CARD_NUMBER = '4539071658008696';
+
+				$form.formValidation( {
+					autoFocus: true,
+					framework: 'bootstrap',
+					locale: 'es_ES',
+					icon: {
+						valid: 'glyphicon glyphicon-ok',
+						invalid: 'glyphicon glyphicon-remove',
+						validating: 'glyphicon glyphicon-refresh'
+					},
+					fields: {
+						creditCardName: {
+							validators: { notEmpty: { message: 'Por favor introduce el nombre que esta en la tarjeta.' }, stringLength: { max: 80 }, regexp: { regexp: /^[a-zA-ZñÑ\s]+$/ } }
+						},
+						creditCardNumber: {
+							validators: {
+								notEmpty: { message: 'Por favor introduce el número de la tarjeta de crédito.' },
+								creditCard: { 
+									message: 'Por favor introduce un número tarjeta valido.',
+									transformer: function( $field, validatorName, validator ) {
+										var value = $field.val();
+										if (value !== '' && $.inArray(value, TEST_CARD_NUMBERS) != -1) {
+											return VALID_CARD_NUMBER;
+										} else {
+											return value;
+						}	}	}	}	},
+						creditCardCvv: {
+							validators: { cvv: {}, notEmpty: {} }
+						},
+						creditCardDues: {
+							validators: { notEmpty: { message: 'Por favor seleccione el número de cuotas.' } }
+						},
+						creditCardMonth: {
+							validators: { notEmpty: { message: 'Por favor seleccione un mes de vencimiento.' } }
+						},
+						creditCardYear: {
+							validators: { notEmpty: { message: 'Por favor seleccione un año de vencimiento.' } }
+						}
+					}
+				} )
+				.on('success.validator.fv', function(e, data) {
+					switch( data.field ) {
+						case 'creditCardName':
+							payment.cardName = data.element.val().trim();
+							break;
+						case 'creditCardNumber':
+							if ( data.validator === 'creditCard' ) {
+								var $icon = data.element.data('fv.icon');
+								switch (data.result.type) {
+									case 'AMERICAN_EXPRESS':
+										$icon.removeClass().addClass('form-control-feedback icoe-card-american');
+										break;
+									case 'DINERS_CLUB':
+										$icon.removeClass().addClass('form-control-feedback icoe-card-dinner');
+										break;
+									case 'MASTERCARD':
+									case 'DINERS_CLUB_US':
+										$icon.removeClass().addClass('form-control-feedback icoe-card-mastercard');
+										break;
+									case 'VISA':
+										$icon.removeClass().addClass('form-control-feedback icoe-card-visa');
+										break;
+									default:
+										$icon.removeClass().addClass('form-control-feedback icoe-card');
+										break;
+								}
+							}
+							payment.cardNumber = data.element.val().trim();
+							break;
+						case 'creditCardCvv':
+							payment.verificationCode = data.element.val().trim();
+							break;
+						case 'creditCardDues':
+							payment.dues = data.element.val().trim();
+							break;
+						case 'creditCardMonth':
+							payment.expirationMonth = data.element.val().trim();
+							break;
+						case 'creditCardYear':
+							payment.expirationYear = data.element.val().trim();
+							break;
+					}
+				} )
+				.on('err.field.fv', function(e, data) {
+					if (data.field === 'creditCardNumber') {
+						var $icon = data.element.data('fv.icon');
+						$icon.removeClass().addClass('form-control-feedback glyphicon glyphicon-remove');
+					}
+				} );
+				break;
+			case 'debitCard':
+				$form.formValidation( {
+					autoFocus: true,
+					framework: 'bootstrap',
+					locale: 'es_ES',
+					icon: {
+						valid: 'glyphicon glyphicon-ok',
+						invalid: 'glyphicon glyphicon-remove',
+						validating: 'glyphicon glyphicon-refresh'
+					},
+					fields: {
+						debitCardBank: {
+							validators: { notEmpty: { message: 'Por favor seleccione el banco.' } }
+						},
+						debitCardPersonType: {
+							validators: { notEmpty: { message: 'Por favor seleccione el tipo de persona.' } }
+						},
+						debitCardDocumentType: {
+							validators: { notEmpty: { message: 'Por favor seleccione el tipo de documento.' } }
+						},
+						debitCardId: {
+							validators: { notEmpty: { message: 'Por favor introduce el número de su documento de identidad.' }, digits : {}, stringLength: { max: 16 } }
+						}
+					}
+				} )
+				.on('success.validator.fv', function(e, data) {
+					switch( data.field ) {
+						case 'debitCardBank':
+							payment.bank = data.element.val().trim();
+							break;
+						case 'debitCardPersonType':
+							payment.clientType = data.element.val().trim();
+							break;
+						case 'debitCardDocumentType':
+							payment.identityCardType = data.element.val().trim();
+							break;
+						case 'debitCardId':
+							payment.identityCard = data.element.val().trim();
+							break;
+					}
+				} );
+				break;
+		}
+	};
+	
+	/**
+	* Description: Confirmar la selección del medio de pago 
+	* Parameters : payment = objeto Payment con la información del medio de pago seleccionado,
+	*              $parent = objeto jquery que contiene el medio de pago
+	* Created    : 2016/04/07 - Modified:
+	*/
+	var sendPaymentMethod = function( payment, $parent ){
+		try {
+			$.ajax( {
+				url      : 'sendPaymentFormAction',
+				type     : 'post',
+				data     : payment,
+				dataType : 'json',
+				beforeSend: function(){ openLoadCounter(); }
+			} )
+			.done( function( data ) {
+				if( data !== null ){
+					if( !data.error ){
+						funnelSteps( 4, payment.code, null );
+						redirect( data.successString );
+					} else {
+						showMessagesAlert( data.errorString, 'alert-danger', $parent, 'prepend', 0, true );
+					}
+				} else {
+					showMessagesAlert( 'La selección del método de pago devolvió un valor nulo', 'alert-danger', $parent, 'prepend', 0, true );
+				}
+			} )
+			.fail( function( jqXHR, textStatus, errorThrown ) {
+				var data = {
+						title    : 'Error...',
+						messages : 'La selección del método de pago presento un error. ' + jqXHR.status + ' - ' + textStatus + ' - ' + errorThrown,
+						css      : 'alert-danger',
+						parent   : $parent
+					};
+				ajaxFailStatusAction( jqXHR, data );
+			} )
+			.always( function() {
+				$('#load-counter').modal('hide');
+			} );
+		} catch ( e ) {
+			console.log( 'Confirm Payment catch: ' + e.message );
+		}
+	};
+	
+	var $paymentPage = $('#payment-page'),
+		$panelsPaymentMethod = $paymentPage.find('#panel-payment-methods'),
+		payment = new Payment(),
+		mPaymentCode = sessionStorage.getItem('mpaymentcode');
+		mPayment = sessionStorage.getItem('mpayment');
+
+	if( mPayment !== null ){
+		showMessagesAlert( mPayment, 'alert-danger', $panelsPaymentMethod, 'prepend', 0, true );
+		sessionStorage.removeItem('mpayment');
+		sessionStorage.removeItem('mpaymentcode');
+	}
+
+	setupPaymentMethodForm( $panelsPaymentMethod );
+
+	$panelsPaymentMethod.find('.panel-collapse')
+	.collapse( { parent : '#panel-payment-methods', toggle: false } )
+	.on('show.bs.collapse', function (e) {
+		var $form = $(this).find( 'form' );
+		if( !$(e.target).hasClass('cvv') && $form.length ){
+			$form.find('input, select, button').prop('disabled', false);
+			validatePaymentMethodForm( $form );
+		}
+		else {
+			$(this).find('.btn-payment').prop('disabled', false);
+		}
+	} )
+	.on('hidden.bs.collapse', function (e) {
+		var $form = $(this).find( 'form' );
+		if( !$(e.target).hasClass('cvv') && $form.length ){
+			var instance = $form.data('formValidation');
+			if (instance) {
+				instance.destroy();
+			}
+			setupPaymentMethodForm( $(this) );
+		}
+		payment = new Payment();
+	} );
+
+	$panelsPaymentMethod.on( 'click', '.btn-payment' , function( e ){
+		e.preventDefault();
+		var paymentCode = $(this).data('paymentmethod').trim(),
+			$panelBody = $(this).closest('.panel-body'),
+			$form = $panelBody.find('#' + paymentCode );
+		
+		$panelBody.find('.alert .close').trigger('click');
+		if ( paymentCode === 'creditCardBC' ){
+			payment.code = 'creditCard';
+		} else{
+			payment.code = paymentCode;
+		}
+		
+		
+		if( $form.length ){
+			$form.data('formValidation').validate();
+			if( !$form.data('formValidation').isValid() ){
+				return false;
+			}
+		}
+		sendPaymentMethod( payment, $(this).closest('.panel-body') );
+	} );
+}
+
+/* +++++++++++++++++++++++ */
+/* +  CHECKOUT - REVIEW  + */
+/* +++++++++++++++++++++++ */
+
+
+
+if( $('#review-page').length ){
+	
+	/**
+	* Description: Actualiza los datos del objeto billing 
+	* Parameters : $billingInfo = objeto html con la información de facturación,
+	*              $modal       = modal con los datos del formulario
+	* Created    : 2016/04/07 - Modified:
+	*/
+	var updateBillingData = function( $billingInfo, $modal ){
+		var documentType = $billingInfo.filter('.documentType').text().trim();
+		billing.documentType = documentType;
+		if (documentType == "2") {
+			$('#div_initial_space').addClass('none');
+			$('#div_user_space').addClass('none');
+			$('#div_company_space').removeClass('none');
+			$companyBillingInfo.filter('.businessName').val($billingInfo.filter('.name').text().trim());
+			$companyBillingInfo.filter('.businessNumber').val($billingInfo.filter('.number').text().trim());
+		} else {
+			$('#div_initial_space').addClass('none');
+			$('#div_company_space').addClass('none');
+			$('#div_user_space').removeClass('none');
+			$clientBillingInfo.filter('.clientName').text($billingInfo.filter('.name').text().trim());
+			$clientBillingInfo.filter('.clientLastName').text($billingInfo.filter('.lastName').text().trim());
+			$clientBillingInfo.filter('.clientNumber').text($billingInfo.filter('.number').text().trim());
+		}
+		billing.name         = $billingInfo.filter('.name').text().trim();
+		billing.lastName     = $billingInfo.filter('.lastName').text().trim();
+		billing.number       = $billingInfo.filter('.number').text().trim();
+		billing.department   = $billingInfo.filter('.department').text().trim();
+		billing.departmentId = $modal.data('departmentkey').trim();
+		billing.city         = $billingInfo.filter('.city').text().trim();
+		billing.cityId       = $modal.data('citykey').trim();
+		billing.address      = $billingInfo.filter('.address').text().trim();
+		billing.telephone    = $billingInfo.filter('.telephone').text().trim();
+		billing.identityCard = $billingInfo.filter('.number').text().trim();
+		return false;
+	}
+	var restoreBackUpBillingData = function(backupBilling){
+		$billingInfo.filter('.name').text( backupBilling.name );
+		$billingInfo.filter('.lastName').text( backupBilling.lastName );
+		$billingInfo.filter('.number').text( backupBilling.number );
+		$billingInfo.filter('.department').text( backupBilling.department );
+		$billingInfo.filter('.city').text(  backupBilling.city );
+		$billingInfo.filter('.address').text(  backupBilling.address );
+		$billingInfo.filter('.telephone').text(  backupBilling.telephone );
+		
+		billing.documentType = "-";
+		billing.name         = backupBilling.name;
+		billing.lastName     = backupBilling.lastName;
+		billing.number       = backupBilling.number;
+		billing.department   = backupBilling.department;
+		billing.departmentId = backupBilling.departmentId;
+		billing.city         = backupBilling.city;
+		billing.cityId       = backupBilling.cityId;
+		billing.address      = backupBilling.address;
+		billing.telephone    = backupBilling.telephone;
+		billing.identityCard = backupBilling.identityCard;
+		
+		$('#company_space').addClass('none');
+		$('#user_space').addClass('none');
+		
+		$modal.data('departmentkey', billing.departmentId );
+		$modal.data('citykey', billing.cityId );
+		$modal.data('documenttypekey', "" );
+		$modal.find('#address').val( billing.address );
+		$modal.find('#telephone').val( billing.telephone );
+		
+		if (backupBilling.documentType == "2") {
+			$('#div_initial_space').addClass('none');
+			$('#div_user_space').addClass('none');
+			$('#div_company_space').removeClass('none');
+			$companyBillingInfo.filter('.businessName').val($billingInfo.filter('.name').text().trim());
+			$companyBillingInfo.filter('.businessNumber').val($billingInfo.filter('.number').text().trim());
+		} else {
+			$('#div_initial_space').addClass('none');
+			$('#div_company_space').addClass('none');
+			$('#div_user_space').removeClass('none');
+			$clientBillingInfo.filter('.clientName').text($billingInfo.filter('.name').text().trim());
+			$clientBillingInfo.filter('.clientLastName').text($billingInfo.filter('.lastName').text().trim());
+			$clientBillingInfo.filter('.clientNumber').text($billingInfo.filter('.number').text().trim());
+		}
+		
+		return false;
+	}
+	var generateBackUpBillingData = function( ){
+		backupBilling.documentType = billing.documentType;
+		backupBilling.name         = billing.name;
+		backupBilling.lastName     = billing.lastName;
+		backupBilling.number       = billing.number;
+		backupBilling.department   = billing.department;
+		backupBilling.departmentId = billing.departmentId;
+		backupBilling.city         = billing.city;
+		backupBilling.cityId       = billing.cityId;
+		backupBilling.address      = billing.address;
+		backupBilling.telephone    = billing.telephone;
+		backupBilling.identityCard = billing.identityCard;
+		return false;
+	}
+	/**
+	* Description: Realiza la validación del formulario con los datos de facturación 
+	* Parameters : $form = objeto html tipo form con el id #form-billing,
+	* Created    : 2016/04/07 - Modified:
+	*/
+	var validateBillingModalForm = function( $form ){
+		$form.formValidation( {
+			autoFocus: true,
+			framework: 'bootstrap',
+			locale: 'es_ES',
+			icon: {
+				valid: 'glyphicon glyphicon-ok',
+				invalid: 'glyphicon glyphicon-remove',
+				validating: 'glyphicon glyphicon-refresh'
+			},
+			fields: {
+				documentType: {
+					validators: { notEmpty: { message: 'Por favor seleccione su tipo de documento.' } }
+				},
+				clientName: {
+					validators: { notEmpty: { message: 'Por favor ingrese el nombre completo.' }, stringLength: { min: 3, max: 80 }, regexp: { regexp: /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]+$/ } }
+				},
+				clientLastName: {
+					validators: { notEmpty: { message: 'Por favor ingrese los apellidos completos.' }, stringLength: { min: 3, max: 80 }, regexp: { regexp: /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]+$/ } }
+				},
+				clientNumber: {
+					validators: { notEmpty: { message: 'Por favor ingrese un número cédula o NIT' }, numeric: {}, stringLength: { min: 7, max: 15 }, }
+				},
+				department: {
+					validators: { notEmpty: { message: 'Por favor seleccione un departamento.' } }
+				},
+				city: {
+					validators: { notEmpty: { message: 'Por favor seleccione una ciudad.' } }
+				},
+				address: {
+					validators: { notEmpty: { message: 'Por favor ingrese una dirección' }, stringLength: { min: 3, max: 80 }, regexp: { regexp: /^[a-zA-Z0-9\s\-\.#]+$/ } }
+				},
+				telephone: {
+					validators: { notEmpty: { message: 'Por favor ingrese un número de teléfono o celular' }, numeric: {}, stringLength: { min: 7, max: 10 }, }
+				}
+			}
+		} );
+	}
+
+	/**
+	* Description: Valida que la información de facturación este completa, antes de seguir
+	* con la confirmación del pedido 
+	* Created    : 2016/06/07 - Modified:
+	*/
+	var validateBillingInfo = function(){
+		if( billing.name === '' ){ return false; }
+		if( billing.identityCard === '' ){ return false; }
+		if( billing.department === '' ){ return false; }
+		if( billing.departmentId === '' ){ return false; }
+		if( billing.city === '' ){ return false; }
+		if( billing.cityId === '' ){ return false; }
+		if( billing.address === '' ){ return false; }
+		if( billing.telephone === '' ){ return false; }
+		return true;
+	}
+
+	/**
+	* Description: Muestra los cambios de inventario en la pagina 
+	* Parameters : data        = json con los productos eliminados o modificados,
+	*              $reviewPage = tag html que contiene el resumen de cambios de inventario
+	* Created    : 2016/04/07 - Modified:
+	*/
+	var showResultInventoryManager = function( data, $reviewPage ){
+		$reviewPage.find('.alert-inventory-manager').remove().end().find('.inventory-manager-product').remove();
+		$.template('summaryInventory', tmpSummaryInventory);
+		var inventory        = data.resultInventoryManager,
+			sumaryUpdated    = data.orderSumsUpdated,
+			$obj             = $.tmpl( 'summaryInventory', inventory ),
+			$reviewDetail    = $reviewPage.find( '.review-detail .value' ),
+			$reviewPoints    = $reviewPage.find( '.review-points strong' ),
+			$reviewPromotion = $reviewPage.find( '#review-promotion-codes' );
+		$obj.insertBefore( $reviewPage.find('.panel-pay').eq(0) );
+		goToContent( $obj, 35 );
+
+		if( inventory.removed.length ){
+			for (var j = 0; j < inventory.removed.length; j++) {
+				$reviewPage.find("div[data-sku='" + inventory.removed[ j ].skuId + "']").remove();
+			}
+		}
+		if( inventory.changed.length ){
+			for (var i = 0; i < inventory.changed.length; i++) {
+				var $product = $reviewPage.find("div[data-sku='" + inventory.changed[ i ].skuId + "']"),
+					$unit    = $product.find('.col-unit'),
+					qty = { 'quantity' : inventory.changed[ i ].qty };
+				$unit.find('.quantity').empty().html( inventory.changed[ i ].qty + ' unidad(es)' );
+				$product.find('.price' ).empty().html( inventory.changed[ i ].price );
+				$.template('messagesInventory', tmpMessagesInventory);
+				$.tmpl( 'messagesInventory', qty ).appendTo( $unit );
+			}
+		}
+
+		$reviewDetail.filter('.subtotal').text( sumaryUpdated.discount ).end()
+			.filter('.discount').text( sumaryUpdated.discount ).end()
+			.filter('.add-discount').text( sumaryUpdated.additionalDiscount ).end()
+			.filter('.shipping').text( sumaryUpdated.shipping ).end()
+			.filter('.countryTax').text( sumaryUpdated.countryTax ).end()
+			.filter('.subtotal').text( sumaryUpdated.subtotal ).end()
+			.filter('.total').text( sumaryUpdated.total ).end();
+		$reviewPoints.html( sumaryUpdated.amountPoints + ' (est.) Puntos Éxito');
+		
+		if( $reviewDetail.filter('.total').first().text() === '0' ){
+			$reviewPage.find('.btn-review').prop( 'disabled', true );
+		}
+
+		if( sumaryUpdated.promotions.length ){
+			var $li = [];
+			for ( var k = 0; k < sumaryUpdated.promotions.length; k++ ) {
+				$li.push( '<li>' + sumaryUpdated.promotions[k] + '</li>' );
+			}
+			$reviewPromotion.empty().append( $li.join('') );
+		} else {
+			$reviewPromotion.parent( 'li' ).remove();
+		}
+		return false;
+	}
+
+	/**
+	* Description: Evento click del botón que confirma la compra.
+	* Parameters : btn-review = estilo css aplicado al botón,
+	* Created    : 2016/04/07 - Modified:
+	*/
+	var confirmPurchase = function( datavisa ){
+		$reviewPage.children('.messages-alert').remove();
+		var $messageObj = $('.review-points').eq(0);
+		if( !$messageObj.length ){
+			$messageObj = $('.review-purchase').eq(0);
+		}
+		
+		if( validateBillingInfo() ){
+			try {
+				$.ajax({
+					url      : 'sendReviewFormAction',
+					type     : 'post',
+					data     : billing,
+					dataType : 'json',
+					beforeSend: function(){ openLoadCounter(); }
+				} ).done( function( data ) {
+					if( data !== null ){
+						if( !data.error ){
+							funnelSteps( 6, '', null );
+							if( data.paymentIsVisaCheckout ){
+								var encrypt = JSON.stringify( datavisa );
+								relocate( data.successString, { 'encrypt' : encrypt } );
+							} else {
+								redirect(data.successString);
+							}
+						} else {
+							if ( data.errorCode === '22' ){
+								showResultInventoryManager( data, $reviewPage );
+							} else if( data.errorCode === '10099' ){
+								sessionStorage.setItem('mpayment', data.errorString);
+								sessionStorage.setItem('mpaymentcode', data.errorCode);
+								redirect( data.successString );
+							}else if( data.errorCode === '105') {
+								redirect( data.successString );
+							} else {
+								showMessagesAlert( data.errorString, 'alert-danger', $messageObj, 'prepend', 0, true );
+							}
+						}
+					} else {
+						showMessagesAlert( 'El método de confirmación de compra devolvió un valor nulo', 'alert-danger', $messageObj, 'prepend', 0, true );
+					}
+				} )
+				.fail( function( jqXHR, textStatus, errorThrown ) {
+					var data = {
+							title    : 'Error...',
+							messages : 'El método de confirmación de compra presento un error. ' + jqXHR.status + ' - ' + textStatus + ' - ' + errorThrown,
+							css      : 'alert-danger',
+							parent   : $messageObj
+						};
+					ajaxFailStatusAction( jqXHR, data );
+				} )
+				.always( function() {
+					$('#load-counter').modal('hide');
+					$modal.modal( 'hide' );
+				} );
+			} catch (e) {
+				console.log( 'Comfirm review method catch: ' + e.message );
+			}
+		} else {
+			console.log("ERROR");
+			showMessagesAlert( 'La información de facturación no esta completa, por favor actualizar todos los datos', 'alert-danger', $messageObj, 'prepend', 0, true );
+		}
+	}
+	
+	var $reviewPage         = $('#review-page'),
+		$billingInfo        = $reviewPage.find('.billing-information'),
+		$clientBillingInfo  = $reviewPage.find('.client-billing-information'),
+		$companyBillingInfo = $reviewPage.find('.company-billing-information'),
+		$modal              = $reviewPage.find('#modal-billing'),
+		$departments        = $modal.find('#department'),
+		$cities             = $modal.find('#city'),
+		//$documentTypes      = $modal.find('#documentType'),
+		$form               = $modal.find( '#form-billing' ),
+		billing             = {},
+		backupBilling       = {};
+	
+		updateBillingData( $billingInfo, $modal );
+		generateBackUpBillingData();
+		validateBillingModalForm( $form );
+	
+	/**
+	* Description: Evento click del link que muestra la ventana modal y configura las listas 
+	*              (select) combos con los departamentos y ciudades.
+	* Parameters : #show-change-billing = id del link que se utiliza para levantar la modal,
+	* Created    : 2016/04/07 - Modified:
+	*/
+	$reviewPage.on('click', '#show-change-billing', function( e ){
+		e.preventDefault();
+		
+		var deparmentKey         = $modal.data( 'departmentkey' ).trim(),
+			cityKey              = $modal.data( 'citykey' ).trim();
+		
+		loadDepartmentCities( $departments, $cities );
+		$modal.on('show.bs.modal', function( e ){
+			if( deparmentKey !== '' ){
+				$departments.children('option').removeAttr('selected').end().val( deparmentKey ).change();
+			}
+			if( cityKey !== '' ){
+				$cities.find('option').removeAttr('selected').end().val( cityKey ).change();
+			}
+			$modal.find('#documentType option').removeAttr('selected').end().val('').change();
+		} ).modal('show');
+	} )
+	
+	/**
+	* Description: Evento click del botón que confirma la compra.
+	* Parameters : btn-review = estilo css aplicado al botón,
+	* Created    : 2016/04/07 - Modified:
+	*/
+	.on('click', '.btn-review', function( e ){
+		e.preventDefault();
+		$reviewPage.children('.messages-alert').remove();
+		confirmPurchase();
+	} )
+	.on('click', '.v-button', function() {
+		var siteurl = $(".v-button").data('siteurl'),
+			oid     = $(".v-button").data('oid'),
+			url     = siteurl +'/checkout/googleRecolectDataLock?oid=' + oid+'&aService=lock';
+		$.ajax( {
+			url : url
+		} ).done( function() {
+			console.log("Done locker");
+		} ).fail( function( jqXHR, textStatus, errorThrown ) {
+			var $messageObj = $('.review-points').eq(0);
+			if( !$messageObj.length ){
+				$messageObj = $('.review-purchase').eq(0);
+			}
+			var data = {
+					title    : 'Error...',
+					messages : 'El método de confirmación de compra para Visa presento un error. ' + jqXHR.status + ' - ' + textStatus + ' - ' + errorThrown,
+					css      : 'alert-danger',
+					parent   : $messageObj
+				};
+			ajaxFailStatusAction( jqXHR, data );
+		} );
+	} );
+	
+	/**
+	* Description: Evento click aplicado a los botones de la modal 
+	* Parameters : #change-billing = botón que cambia la información de facturación,
+	*              .close          = botón que cierra la ventana modal
+	* Created    : 2016/04/07 - Modified:
+	*/
+	$modal.on('hide.bs.modal', function (e) {
+		$form.formValidation();
+		$form.data('formValidation').resetForm();
+	} )
+	.on( 'change', '#documentType', function( e ) {
+		e.preventDefault();
+		$('#company_space').addClass('none');
+		$('#user_space').addClass('none');
+		var selected = $(this).val();
+		if( selected !== '' ){
+			if ( selected === '1') {
+				$('#user_space').removeClass('none');
+			} else if (selected === '2') {
+				$('#company_space').removeClass('none');
+			}
+		}
+	} )
+	.on( 'click', '#change-billing, .close', function( e ){
+		e.preventDefault();
+		e.stopImmediatePropagation();
+		if( $(this).hasClass('close') ){
+			$modal.modal('hide');
+			$modal.find('#name').val( billing.name );
+			$modal.find('#numberId').val( billing.identityCard );
+			$departments.find('option[ value="' + billing.departmentId + '" ]').change();
+			$modal.data('departmentkey', billing.departmentId );
+			$cities.find('option[ value="' + billing.cityId + '" ]').change();
+			$modal.data('citykey', billing.cityId );
+			$modal.find('#address').val( billing.address );
+			$modal.find('#telephone').val( billing.telephone );
+		} else {
+			var documentType = $modal.find('#documentType').val().trim();
+			if (documentType == "1") {
+				$modal.find('#clientName').val($('#clientName').val());
+				$modal.find('#clientLastName').val($('#clientLastName').val());
+				$modal.find('#clientNumber').val($('#clientNumber').val());
+			}else if (documentType == "2") {
+				$modal.find('#clientName').val($('#businessName').val());
+				$modal.find('#clientLastName').val($('#businessName').val());
+				$modal.find('#clientNumber').val($('#businessNumber').val());
+			}
+			// Validar formulario
+			$form.data('formValidation').validate();
+//			
+			if( $form.data('formValidation').isValid() ){
+				$billingInfo.filter('.name').text( $modal.find('#clientName').val().trim() );
+				$billingInfo.filter('.lastName').text( $modal.find('#clientLastName').val().trim() );
+				$billingInfo.filter('.number').text( $modal.find('#clientNumber').val().trim() );
+				$billingInfo.filter('.department').text( $departments.find('option:selected').text() );
+				$modal.data('departmentkey', $departments.find('option:selected').val() );
+				$billingInfo.filter('.city').text( $cities.find('option:selected').text() );
+				$modal.data('citykey', $cities.find('option:selected').val() );
+				$billingInfo.filter('.address').text( $modal.find('#address').val().trim() );
+				$billingInfo.filter('.telephone').text( $modal.find('#telephone').val().trim() );
+				updateBillingData( $billingInfo, $modal );
+				$messageObj = $('.review-purchase').eq(0);
+				try {
+					$.ajax({
+						url      : 'sendBillingFormAction',
+						type     : 'post',
+						data     : billing,
+						dataType : 'json',
+						beforeSend: function(){ openLoadCounter(); }
+					} ).done( function( data ) {
+						if( data !== null ){
+							if( data.error ){
+								restoreBackUpBillingData( backupBilling );
+								showMessagesAlert( data.errorString, 'alert-danger', $billingInfo.closest('.col-xs-12.col-sm-6'), 'prepend', 0, true );
+							}else{
+								showMessagesAlert( 'La información de facturación se actualizó correctamente', 'alert-success', $billingInfo.closest('.col-xs-12.col-sm-6'), 'prepend', 3500, true );
+							}
+						} else {
+							restoreBackUpBillingData( backupBilling );
+							showMessagesAlert( 'El método de guardado de información de facturación devolvió un valor nulo', 'alert-danger', $billingInfo.closest('.col-xs-12.col-sm-6'), 'prepend', 0, true );
+						}
+					} )
+					.fail( function( jqXHR, textStatus, errorThrown ) {
+						restoreBackUpBillingData( backupBilling );
+						var data = {
+								title    : 'Error...',
+								messages : 'El método de guardado de información de facturación presento un error. ' + jqXHR.status + ' - ' + textStatus + ' - ' + errorThrown,
+								css      : 'alert-danger',
+								parent   : $messageObj
+							};
+						ajaxFailStatusAction( jqXHR, data );
+					} )
+					.always( function() {
+						$('#load-counter').modal('hide');
+						$modal.modal('hide');
+					} );
+				} catch (e) {
+					console.log( 'Billing information method catch: ' + e.message );
+				}
+			}
+		}
+	} );
+}
+
+if( $('#checkout-page').length ){
+	if ( $('#checkout-page').data('iscomplete').toString() === 'false') {
+		var $checkout = $('#checkout-page');
+		if( $checkout.data( 'error' ) === '' ){
+			var $operation  = $checkout.children( '.row' ).first(),
+				actionField = {
+					state       : $operation.attr( 'id' ),
+					id          : $operation.data( 'orderid' ).toString(),
+					affiliation : $operation.data( 'affiliation' ).toString(),
+					revenue     : $operation.data( 'revenue' ).toString(),
+					tax         : $operation.data( 'tax' ).toString(),
+					shipping    : $operation.data( 'shipping' ).toString(),
+					cupon       : $operation.data( 'cupon' ).toString()
+				},
+				products    = [];
+
+			$.each( $operation.data( 'product' ), function( i, item ) {
+				products.push( {
+					'id'       : item.skuId,
+					'name'     : item.name,
+					'price'    : item.price,
+					'brand'    : item.brand,
+					'category' : '',
+					'variant'  : '',
+					'quantity' : parseInt( item.qty ),
+					'prdid'    : item.prdId 
+				} );
+			} );
+			measurePurchase( actionField, products );
+		}
+	} else {
+		redirect( '/' );
+	}
+}
+
+/**
+* Description: Cargar las opciones de los departamentos y los municipios en las listas 
+* Parameters : $departments = objeto html tipo select,
+*              $cities      = objeto html tipo select,
+* Created    : 2016/04/07 - Modified: 2016/05/17
+*/
+function loadDepartmentCities( $departments, $cities ){
+	if( $departments.children('option').length <= 1 ){
+		try {
+			$.when(
+				$.ajax( { async : false, url : '/shippingCitiesAction' } )
+			).then( function( data, textStatus, jqXHR ) {
+				addOptionToSelect( $departments, data.departments, 'addressDepartments', tmpAddressDepartments, 'Departamento:', false );
+				addOptionToSelect( $cities, data.departments, 'addressCities', tmpAddressCities, 'Ciudad:', true );
+				
+				var $backUpCities = $('<select/>').append( $cities.children().clone().show() );
+				
+				$departments.on( 'change', function(e){
+					if( $(this).val() !== '' ){
+						var $newOptions = $backUpCities.children( 'option[data-departmentkey="' + $(this).val() + '"]' ).clone();
+						$cities.children().remove();
+						$cities.append( $backUpCities.children( ':eq(0)').clone() ).append( $newOptions ).prop( "disabled", false ).val('').change();
+					} else {
+						$cities.prop( "disabled", true ).val('').change();
+					}
+				} );
+			} );
+		} catch (e) {
+			console.log('El método de consulta de departamentos y ciudades presento un error: ' + e.message);
+		}
+	}
+	return false;
+}
+
+/**
+* Description: Crear una ventana modal pequeña, con titulo y botones para confirmar
+*              rechazar una acción.
+* Parameters : type = small, normal or big
+*              data = objeto con la infromación para crear la ventana modal
+* Created    : 2016/07/25 - Modified:
+*/
+function createTmpModalWindow( type, data ){
+	var $modal = '';
+	switch( type ) {
+		case 'small':
+			$.template('createModalWindow', tmpSmallModalWindow);
+			$modal = $.tmpl( 'createModalWindow', data );
+			break;
+		case 'normal':
+			$.template('createModalWindow', tmpNormalModalWindow);
+			$modal = $.tmpl( 'createModalWindow', data );
+			break;
+		case 'big':
+			$.template('createModalWindow', tmpBigModalWindow);
+			$modal = $.tmpl( 'createModalWindow', data );
+			break;
+	}
+	return $modal;
+}
+
+
+/* ++++++++++++++++++++++ */
+/* + ENHANCED ECOMMERCE + */
+/* ++++++++++++++++++++++ */
+
+/**
+ * Description: Store the user id in the DataLayer
+ * Parameters : data = json with user information
+ * Created    : 2017/03/28 - Modified:
+*/
+function enhancedEcommerceUser( data ){
+	try{
+		var parameters = { 'event':'GATrigger' };
+		
+		if( data.name === ''){
+			parameters.idUsuario = 'AnonymousUser';
+		} else {
+			parameters.idUsuario  = data.userId;
+			parameters.identifier = CryptoJS.SHA256(data.cedulaHash).toString();
+			parameters.mhash      = CryptoJS.SHA256(data.emailHash).toString();
+		}
+		dataLayer.push( parameters );
+	} catch( e ){
+		console.log( 'EnhancedEcommerce: information user - ' + e.messages );
+	}
+}
+
+/**
+* Description: Collect information about product in a object
+* Parameters : $products = array of html object with the .product class
+* Create     : 2016/08/26 + /
+*/
+function collectProductInformation( $products ){
+	var products =  [];
+	try{
+		$('.product').each(function(index, el) {
+			
+			products.push( {
+				"id"         : $(this).data('sku').toString(),
+				"name"       : $(this).find('.name').text().trim(),
+				"price"      : $(this).find('.price').text().trim(),
+				"brand"      : $(this).find('.brand').text().trim(),
+				"position"   : index,
+				"quantity"   : parseInt( $(this).find('.quantity').text().replace( 'unidad(es)', '').trim() )
+			} );
+		} );
+	}
+	catch( ex ){
+		console.log( "EnhancedEcommerce: collectProductInformation - " + ex.message );
+	}
+	return products;
+}
+
+/**
+* Description: Send information about funnel payment process to the DataLayer
+* Parameters : step     = step number
+*              options  = object wiht complementary information
+*              products = object with products information
+* Create     : 2015/02/26 + /
+*/
+function funnelSteps( step, options, products ) {
+	try{
+		var checkout = { 'actionField': {'step': step, 'option': options }, 'products' : [] };
+		if( products !== null ){
+			checkout.products = collectProductInformation( products );
+		}
+		dataLayer.push( {
+			'event': 'checkout',
+			'ecommerce': {
+			'checkout': checkout
+			}
+		} );
+	}
+	catch( ex ){
+		console.log( "EnhancedEcommerce: funnelSteps - " + ex.message );
+	}
+	return false;
+}
+
+/**
+* Description: Send information of the all purchase, shipping, payment method,
+*              price, dicound and productcs 
+* Parameters : actionField = Information about purchase
+*              products    = object with products information
+* Create     : 2016/09/26 + /
+*/
+function measurePurchase( actionField, products ){
+	try{
+		dataLayer.push({
+			'ecommerce': {
+				'purchase':{
+					'actionField': actionField,
+					'products': products
+				}
+			}
+		} );
+	} catch( ex ){
+		console.log( "EnhancedEcommerce: measurePurchase - " + ex.message );
+	}
+	return false;
+}
+
+$(".btn-zopim-chat").click( function(e){
+	e.preventDefault();
+	sessionStorage.zopimIsActive= 1;
+	displayZopimChat(e);
+} );
