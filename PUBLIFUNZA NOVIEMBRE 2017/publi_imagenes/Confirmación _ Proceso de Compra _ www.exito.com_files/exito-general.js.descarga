@@ -1,0 +1,240 @@
+/**
+ * Description: Función generica para realizar los llamados ajax, retorna un objeto jqery deferer
+ * Parameters : url = string, ruta url
+ *              parameters = objeto, estructura json con los parametros de consulta
+ *              error = objeto, con toda la información para llamar la función showMessagesAlert().
+ * Created    : 2017/07/06 - Modified: 
+ */
+function ajaxCall( url, parameters, error ){
+	try{
+		return $.ajax( {
+			url      : url,
+			type     : 'post',
+			data     : parameters,
+			dataType : 'json',
+			beforeSend: function(){ openLoadCounter(); }
+		} )
+		.done( function( data ) {
+			if( data !== null ){
+				if( data.error ){
+					showMessagesAlert( data.errorString, 'alert-danger', error.parent, error.position, error.time, error.goTo );
+				}
+			} else {
+				showMessagesAlert( 'La operación, ' + error.messages + ', devolvió valor nulo', 'alert-danger', error.parent, error.position, error.time, error.goTo );
+			}
+		} )
+		.fail( function( jqXHR, textStatus, errorThrown ) {
+			try {
+				var pattern = /^(1000|412|5(0\d|10|11))$/;
+				if ( pattern.test( jqXHR.status ) ){
+					redirect( jqXHR.responseText );
+				} else {
+					showMessagesAlert( 'La operación, ' + error.messages + ', presentó un error.', 'alert-danger', error.parent, error.position, 0, error.goTo );
+					console.log( 'Call Ajax Fail Error: La operación ' + error.parent + ' presento un error. ' + jqXHR.status + ' - ' + textStatus + ' - ' + errorThrown )
+				}
+			} catch ( e ){
+				console.log( 'Call Ajax Fail Catch Error: ' + e.message );
+			}
+		} )
+		.always( function( data, textStatus, jqXHR ) {
+			$('#load-counter').modal('hide');
+		} );
+	} catch ( e ) {
+		console.log( 'Call Ajax Catch Error: ' + e.message );
+	}
+}
+
+/**
+ * Description: Mostrar alertas en pantalla 
+ * Parameters : title    = string titulo de la alerta,
+ *              messages = string mensaje de la alerta,
+ *              css      = nombre de la clase según el tipo de alerta,
+ *              $parent  = objeto padre de referencia para ubicar la alerta,
+ *              position = Ubicación con respecto al padre 'after', 'append', 'before', 'prepend'
+ *              time     = numero, tiempo en milisegundo para ocultar el mensaje
+ *              goTo     = true o false, para indicar que el scroll de la pantalla debe viajar hasta el mensaje
+ * Created    : 2016/04/07 - Modified: 2017/07/26
+*/
+function showMessagesAlert( messages, css, $parent, position, time, goTo ){
+	try{
+		var data = { 'messages': messages, 'css' : css };
+		
+		if( goTo === undefined ){ goTo = false; }
+		
+		$.template('createMessagesAlert', tmpMessagesAlert);
+		var $obj = $.tmpl( 'createMessagesAlert', data );
+		switch( position ) {
+			case 'after':
+				$parent.next('.messages-alert').find('.close').trigger('click');
+				$obj.insertAfter( $parent );
+				break;
+			case 'append':
+				$parent.children('.messages-alert').find('.close').trigger('click');
+				$obj.appendTo( $parent );
+				break;
+			case 'before':
+				$parent.prev('.messages-alert').find('.close').trigger('click');
+				$obj.insertBefore( $parent );
+				break;
+			default:
+				$parent.children('.messages-alert').find('.close').trigger('click');
+				$obj.prependTo( $parent );
+		}
+		if ( goTo ){
+			goToContent( $obj, 35 );
+		}
+		if( time !== undefined && time > 0 ){
+			setTimeout( function(){ $obj.slideUp( 150, function(){ $obj.detach(); } ); }, time);
+		}
+	} catch ( e ){
+		console.log( 'Show Messages Alert Catch Error: ' + e.message );
+	}
+	return false;
+}
+
+/**
+ * Description: Go to a specific point on the page to view content
+ * Parameter  : obj   = the object that call function,
+ *              pixel = number in pixel
+ * Create     : 2016/06/22 - Modified:
+*/
+function goToContent( $obj, pixel ){
+	try{
+		if( pixel === undefined ){ pixel = 0; }
+		$('html,body').animate( { scrollTop: ( parseInt( $obj.offset().top ) -  parseInt( pixel ) ) }, 250 );
+	} catch ( e ){
+		console.log( 'Go To Content Catch Error: ' + e.message );
+	}
+	return false;
+}
+
+/**
+ * Description: Adiciona las opciones a un Select utilizando plantillas 
+ * Parameters : $select    = control html,
+ *              options    = json con los datos,
+ *              idTemplate = nombre de la plantilla,
+ *              template   = string con la plantilla,
+ *              disabled   = true o false para agregar el atributo disabled al control 
+ * Created    : 2016/03/04 - Modified:
+ */
+function addOptionToSelect( $select, options, idTemplate, template, text, disabled ){
+	$select.empty();
+	$.template( idTemplate, template );
+	$.tmpl( idTemplate, options ).appendTo( $select );
+	
+	if( disabled ){
+		$select.prop( "disabled", disabled ).find('option').hide().end().prepend( $('<option>', { 'value' : '', 'selected' : 'true', 'text' : text } ) ).change();
+	} else {
+		$select.prop( "disabled", disabled ).prepend( $('<option>', { 'value' : '', 'selected' : 'true', 'text' : text } ) ).change();
+	}
+	return false;
+}
+
+/**
+ * Description: create the html for modal window, for show the preload icon + //
+ * Created: 2015/09/14 - Modified:
+*/
+function openLoadCounter(){
+	try{
+		$.template('loadCounter', $tmpLoadCounter );
+		$.tmpl( 'loadCounter' ).appendTo( 'body' );
+		var $counter =  $('#load-counter');
+		$counter.modal( { keyboard: false, backdrop : false } )
+		.on( 'show.bs.modal', function( e ) { 
+			calculateCenterPosition( $(window), $counter.find('.modal-dialog') );
+		} )
+		.on('hidden.bs.modal', function( e ) {
+			$(this).remove();
+		} ).modal( 'show' );
+	
+		$(window).resize(function() {
+		  calculateCenterPosition( $(window), $counter.find('.modal-dialog') );
+		} );
+	} catch ( e ){
+		console.log( 'Open Load Counter Catch Error: ' + e.message );
+	}
+	return false;
+}
+
+/**
+ * Description: Calcula la distancia de una modal con respecto a su contenedor para que quede centrada en pantalla  
+ * Parameters : $parend = control html que contiene la modal,
+ *              $obj    = ventana modal que se desea ubicar
+ * Created    : 2016/03/04 - Modified: 2016/05/17
+*/
+function calculateCenterPosition( $parend, $obj ){
+	try{
+		var l = ( ( $parend.width() / 2 ) - ( $obj.width() / 2 ) );
+		var t = ( ( $parend.height() / 2 ) - ( $obj.width() / 2 ) );
+		$obj.css( { 'left' : l, 'top' : t } );
+	} catch ( e ){
+		console.log( 'Calculate Center Position Catch Error: ' + e.message );
+	}
+	return false;
+}
+
+/**
+ * Description: Redirect page 
+ * Parameters : url = string with the destination url
+ * Created    : 2016/04/01 - Modified:
+*/
+function redirect(url) {
+	try{
+		var ua        = navigator.userAgent.toLowerCase(),
+			isIE      = ua.indexOf('msie') !== -1,
+			version   = parseInt(ua.substr(4, 2), 10);
+		// Internet Explorer 8 and lower
+		if (isIE && version < 9) {
+			var link = document.createElement('a');
+			link.href = url;
+			document.body.appendChild(link);
+			link.click();
+		}
+		// All other browsers can use the standard window.location.href (they don't lose HTTP_REFERER like IE8 & lower does)
+		else { 
+			window.location.href = url; 
+		}
+	} catch ( e ){
+		console.log( 'Redirect Url Catch Error: ' + e.message );
+	}
+}
+
+/**
+ * Description: Redirect page according status error code
+ * Parameters : jqXHR = object
+ *              data  = object wiht error information
+ * Created    : 2016/07/25 - Modified:
+*/
+function ajaxFailStatusAction( jqXHR, data ){
+	try {
+		var pattern = /^(1000|412|5(0\d|10|11))$/;
+		if ( pattern.test( jqXHR.status ) ){
+			redirect( jqXHR.responseText );
+		} else {
+			showMessagesAlert( data.messages, data.css, data.parent, 'prepend', 0, true );
+		}
+	} catch (e){
+		console.log( 'Ajax Fail Status Action catch = ' + e.message );
+	}
+}
+
+function pendingPaymentProcess(){
+	var message  = '<span class="glyphicon glyphicon-hourglass"></span><p>La compra realizada el dia <b>( poner fecha y hora )</b>, se encuentra en proceso de <b>validación</b> por parte <b>Entidad bancaria</b>.</p>';
+		message += '</p>por favor <b>espere</b> unos <b>minutos</b> para verificar el estado de la operación.</p>';
+		message += '</p>Si tiene alguna duda por favor comuníquese con nosotros a travéz del <a href="#" class="btn-zopim-chat" title="Chat servicio al cliente">Chat de servicio al cliente</a>.</p>'
+	var data = {
+			id           : 'modalPendingPaymentProcess',
+			title        : 'Transacción en proceso',
+			buttontext01 : '',
+			buttontext02 : '',
+			content      : message
+		},
+		$modal   = createTmpModalWindow( 'normal', data, true, false );
+		$modal.on( 'click', '.btn-zopim-chat', function( e ){
+			e.preventDefault();
+			sessionStorage.zopimIsActive= 1;
+			displayZopimChat(e);
+			$modal.modal( 'hide' );
+		} )
+		.modal( 'show' );
+}

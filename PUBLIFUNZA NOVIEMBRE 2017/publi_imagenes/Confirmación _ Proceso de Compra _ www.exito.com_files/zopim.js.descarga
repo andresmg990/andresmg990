@@ -1,0 +1,49 @@
+function displayZopimChat(e){
+    try{
+    	/* + Description: Register Zopim chat client ID + */
+        window.$zopim
+                || (function(d, s) {
+                    var z = $zopim = function(c) {
+                        z._.push(c)
+                    }, $ = z.s = d.createElement(s), e = d
+                            .getElementsByTagName(s)[0];
+                    z.set = function(o) {
+                        z.set._.push(o)
+                    };
+                    z._ = [];
+                    z.set._ = [];
+                    $.async = !0;
+                    $.setAttribute('charset', 'utf-8');
+                    $.src = '//v2.zopim.com/?2LadK0fJ4dw7K5FqUba6VxG8PAzCTpmp';
+                    z.t = +new Date;
+                    $.type = 'text/javascript';
+                    e.parentNode.insertBefore($, e)
+        } )( document, 'script' );
+
+        $zopim(function() {
+            $zopim.livechat.hideAll();
+            $zopim.livechat.setLanguage('es');
+            $zopim.livechat.badge.setLayout('image_left');
+            $zopim.livechat.badge.setImage('https://www.exito.com/redesign/img/dsn/imgLogoExito03.gif');
+            $zopim.livechat.badge.setText('Chat! Estamos para servirte.');
+            $zopim.livechat.badge.setColor('#FFE800');
+            $zopim.livechat.theme.setColor('#FFE800');
+            $zopim.livechat.bubble.setColor('#FFE800');
+            $zopim.livechat.bubble.setText('Estamos para servirte.');
+            $zopim.livechat.bubble.setTitle('Estamos para servirte.');
+            $zopim.livechat.window.setTitle('Chat! Estamos para servirte.');
+            $zopim.livechat.window.setSize('large');
+            $zopim.livechat.departments.filter('Exito');
+
+            if(zopimUserName != null && zopimEmail != null){
+                $zopim.livechat.setName(zopimUserName);
+                $zopim.livechat.setEmail(zopimEmail);
+            }
+
+            $zopim.livechat.window.show();
+          } );
+    }catch(err){ console.log(err) 
+    	
+    }
+}
+
